@@ -1,0 +1,1645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>NoteReader — Piano &amp; Staff Note Flashcards</title>
+    <meta name="theme-color" content="#2c1e16">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231d63dc'/%3E%3Ctext x='16' y='24' font-size='22' text-anchor='middle' fill='white'%3E%E2%99%AA%3C/text%3E%3C/svg%3E">
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Music&text=%F0%9D%84%9E%F0%9D%84%A2&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+        }
+
+        html, body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #6e472b;
+            background-image:
+                repeating-linear-gradient(
+                    90deg,
+                    rgba(255, 255, 255, 0.03) 0px,
+                    rgba(255, 255, 255, 0.03) 2px,
+                    transparent 2px,
+                    transparent 18px
+                ),
+                radial-gradient(circle at 50% 25%, #7d5233 0%, #54331d 100%);
+            color: #2c1e16;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            touch-action: manipulation;
+            overflow-x: hidden;
+            min-height: 100dvh;
+            padding-left: env(safe-area-inset-left, 0px);
+            padding-right: env(safe-area-inset-right, 0px);
+            padding-bottom: var(--safe-bottom);
+        }
+
+        .font-display {
+            font-family: 'Fredoka', sans-serif;
+        }
+
+        /* Cozy Piano Chassis with Crimson/Dark Felt Strip */
+        .piano-bed {
+            background: linear-gradient(180deg, #1b1512 0%, #2c1e16 100%);
+            border-bottom: 5px solid #4a121b;
+            box-shadow: inset 0 -3px 6px rgba(0, 0, 0, 0.45);
+        }
+
+        .white-key {
+            background: linear-gradient(180deg, #f3ede0 0%, #fffdf7 14%, #fffdf7 91%, #e8dfc8 100%);
+            border-left: 1px solid #d6cbb5;
+            border-right: 1px solid #c5b89e;
+            border-bottom: 4px solid #c5b89e;
+            border-radius: 0 0 8px 8px;
+            transition: transform 0.07s ease, background 0.1s ease, box-shadow 0.07s ease;
+            box-shadow: inset 0 -2px 3px rgba(68, 49, 32, 0.08), 0 3px 5px rgba(20, 12, 7, 0.35);
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .white-key:hover {
+            background: linear-gradient(180deg, #efe7d6 0%, #fffef9 100%);
+        }
+        .white-key:active, .white-key.pressed {
+            transform: translateY(2px);
+            border-bottom-width: 1px;
+            background: linear-gradient(180deg, #e5dac3 0%, #f5efe2 100%);
+            box-shadow: inset 0 2px 4px rgba(44, 30, 22, 0.22);
+        }
+
+        .black-key {
+            background: linear-gradient(180deg, #3b3532 0%, #171412 78%, #26211e 100%);
+            border-left: 1px solid #4d4540;
+            border-right: 1px solid #090807;
+            border-bottom: 5px solid #090807;
+            border-radius: 0 0 6px 6px;
+            box-shadow: 0 5px 8px rgba(10, 6, 4, 0.55), inset 0 1px 1px rgba(255, 250, 240, 0.22);
+            transition: transform 0.07s ease;
+            z-index: 20;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .black-key:active, .black-key.pressed {
+            transform: translateY(2px);
+            border-bottom-width: 1px;
+        }
+
+        /* Glossy Cobalt-Blue 3D Plastic Magnetic Tokens (Hoffman Style) */
+        .blue-counter {
+            background: radial-gradient(circle at 32% 28%, #5da2ff 0%, #1d63dc 56%, #13449e 94%);
+            border: 2px solid #8fc0ff;
+            box-shadow:
+                0 4px 7px rgba(15, 23, 42, 0.38),
+                inset 0 2px 3px rgba(255, 255, 255, 0.6),
+                inset 0 -2px 4px rgba(12, 36, 97, 0.55);
+            transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .blue-counter.active-play {
+            transform: scale(1.18);
+            background: radial-gradient(circle at 32% 28%, #fde047 0%, #f59e0b 65%, #b45309 100%);
+            border-color: #fef08a;
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.8);
+        }
+
+        .blue-counter.revealed-correct {
+            background: radial-gradient(circle at 32% 28%, #34d399 0%, #10b981 65%, #047857 100%);
+            border-color: #a7f3d0;
+        }
+
+        .blue-counter.wrong-flash {
+            background: radial-gradient(circle at 32% 28%, #fca5a5 0%, #ef4444 65%, #b91c1c 100%) !important;
+            border-color: #fecaca !important;
+            transform: scale(1.14);
+            box-shadow: 0 0 14px rgba(239, 68, 68, 0.8);
+        }
+
+        .white-key.midi-wrong {
+            background: linear-gradient(180deg, #fee2e2 0%, #fca5a5 100%) !important;
+        }
+
+        /* Cozy Studio Card & Cream Sheet Music Paper with Crimson Binder Trim */
+        .studio-card {
+            background: #fcf8ee;
+            border: 2px solid #3d2415;
+            box-shadow: 0 14px 30px -6px rgba(24, 13, 6, 0.45), 0 4px 10px -2px rgba(24, 13, 6, 0.25);
+        }
+
+        .music-sheet {
+            background-color: #fcf8ee;
+            background-image: linear-gradient(180deg, #fdfaf2 0%, #f7f0df 100%);
+            border-left: 10px solid #9f1d35;
+            border-right: 10px solid #9f1d35;
+            box-shadow: inset 4px 0 8px rgba(95, 14, 29, 0.14), inset -4px 0 8px rgba(95, 14, 29, 0.14);
+        }
+
+        @media (max-width: 640px) {
+            .music-sheet {
+                border-left-width: 7px;
+                border-right-width: 7px;
+            }
+        }
+
+        @keyframes micRing {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55); }
+            100% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+        }
+        .mic-pulse { animation: micRing 1.5s infinite; }
+
+        button:focus-visible { outline: 3px solid #3b82f6; outline-offset: 2px; }
+        .white-key:focus-visible { outline: 3px solid #3b82f6 !important; outline-offset: -4px !important; }
+
+        /* iOS zooms into inputs under 16px; bigger touch targets on touch screens */
+        @media (pointer: coarse) {
+            #filterBar select { font-size: 16px; }
+            header button { min-height: 36px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, ::before, ::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+        }
+
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="flex flex-col text-[#2c1e16]">
+
+    <!-- Cozy Dark-Wood & Warm-Amber Top Navigation Bar -->
+    <header style="padding-top: var(--safe-top)" class="sticky top-0 z-30 bg-[#2c1e16]/95 backdrop-blur-md border-b border-[#4a3325] text-[#fdf6e7] shadow-md">
+        <div class="max-w-5xl mx-auto px-3 sm:px-6 py-2 flex items-center justify-between gap-2">
+            <!-- Warm Cozy Brand Identity -->
+            <div class="flex items-center gap-2 min-w-0">
+                <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-[#3b82f6] to-[#1d4ed8] text-white flex items-center justify-center font-display font-bold text-sm shadow-sm border border-[#93c5fd]/50 shrink-0">
+                    ♪
+                </div>
+                <span class="hidden min-[420px]:inline font-display font-bold text-sm sm:text-base tracking-tight text-[#fdf6e7] truncate">
+                    Note<span class="text-[#7dd3fc]">Reader</span>
+                </span>
+            </div>
+
+            <!-- Unified Status & Utility Pills -->
+            <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                <!-- MIDI Device Status Pill -->
+                <button id="midiConnectBtn" type="button" class="inline-flex items-center gap-1.5 bg-[#3d2a1f] hover:bg-[#4e3729] border border-[#5e4332] rounded-full px-2.5 py-1 text-xs font-medium text-[#f5ecd8] transition cursor-pointer" title="Connect USB MIDI Piano (e.g., Yamaha P-125)">
+                    <span id="midiStatusDot" class="w-2 h-2 rounded-full bg-amber-300/70 shrink-0"></span>
+                    <span id="midiStatusLabel" class="max-w-[72px] min-[400px]:max-w-[95px] sm:max-w-[150px] truncate">Connect MIDI</span>
+                </button>
+
+                <!-- 2-Min Daily Drill Timer -->
+                <button id="drillTimerBtn" type="button" class="inline-flex items-center gap-1 bg-[#3d2a1f] hover:bg-[#4e3729] border border-[#5e4332] rounded-full px-2.5 py-1 text-xs font-semibold text-[#f5ecd8] transition cursor-pointer" title="Tap to start/reset 2-minute daily practice timer">
+                    <span class="text-amber-300">⏱</span>
+                    <span id="timerDisplay">2:00</span>
+                </button>
+
+                <!-- Streak Counter -->
+                <div class="inline-flex items-center gap-1 bg-amber-400/20 border border-amber-400/40 rounded-full px-2.5 py-1 text-xs font-bold text-amber-200" title="Cards Completed">
+                    <span class="text-amber-300">★</span>
+                    <span id="scoreDisplay">0</span>
+                </div>
+
+                <!-- Filters Toggle Button -->
+                <button id="filterToggleBtn" type="button" class="inline-flex items-center gap-1 bg-[#3d2a1f] hover:bg-[#4e3729] border border-[#5e4332] rounded-full px-2.5 py-1 text-xs font-medium text-[#f5ecd8] transition cursor-pointer" title="Toggle practice filters">
+                    <svg class="w-3.5 h-3.5 text-amber-200/80" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                    <span class="hidden sm:inline">Filters</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Studio Workspace -->
+    <main class="flex-1 flex flex-col justify-between max-w-5xl w-full mx-auto px-2.5 sm:px-6 py-2.5 sm:py-4 gap-2.5 sm:gap-3.5">
+
+        <!-- Compact Warm Parchment Filter Strip -->
+        <div id="filterBar" class="flex flex-wrap items-center justify-between gap-2 bg-[#f5ecd8] border border-[#d6c5a3] rounded-xl p-1.5 shadow-sm text-xs">
+            <div class="flex flex-wrap items-center gap-1.5">
+                <select id="levelSelect" aria-label="Note Range" class="bg-[#fcf8ee] hover:bg-white text-[#2c1e16] border border-[#cbb894] rounded-lg px-2.5 py-1.5 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer">
+                    <option value="pentascale">Unit 1: Treble C–G</option>
+                    <option value="treble_octave">Unit 2: Treble C4–C5</option>
+                    <option value="treble_full">Unit 3: Full Treble</option>
+                    <option value="bass_pentascale">Unit 4: Bass C3–G3</option>
+                    <option value="bass_full">Unit 5: Full Bass</option>
+                    <option value="grand_staff">Unit 6: Grand Staff</option>
+                </select>
+
+                <select id="countSelect" aria-label="Number of Dots" class="bg-[#fcf8ee] hover:bg-white text-[#2c1e16] border border-[#cbb894] rounded-lg px-2.5 py-1.5 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer">
+                    <option value="1">1 Dot</option>
+                    <option value="3">3 Dots</option>
+                    <option value="5" selected>5 Dots</option>
+                    <option value="random">Random (1–5)</option>
+                </select>
+
+                <select id="displayModeSelect" aria-label="Where to show dots" class="bg-[#fcf8ee] hover:bg-white text-[#2c1e16] border border-[#cbb894] rounded-lg px-2.5 py-1.5 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer">
+                    <option value="both">Both Piano &amp; Staff</option>
+                    <option value="staff">Staff Only</option>
+                    <option value="piano">Piano Only</option>
+                </select>
+            </div>
+
+            <!-- MIDI Play Mode Pill (Visible when MIDI device is connected) -->
+            <button id="midiModeToggleBtn" type="button" class="hidden items-center gap-1.5 bg-emerald-100 hover:bg-emerald-200/80 text-emerald-900 border border-emerald-300 rounded-lg px-2.5 py-1.5 font-semibold transition cursor-pointer shrink-0" title="Switch between Play-to-Answer and Free Play">
+                <span id="midiModeIcon">🎯</span>
+                <span id="midiModeLabel">Play-to-Answer</span>
+            </button>
+        </div>
+
+        <!-- Unified Elevated Piano + Cream Sheet Music Notebook Card -->
+        <section aria-label="Piano and Musical Staff" class="studio-card flex-1 flex flex-col rounded-2xl overflow-hidden">
+
+            <!-- TOP HALF: Overhead Ivory Piano Keyboard with Crimson Felt Strip -->
+            <div class="piano-bed w-full pt-1.5 pb-2 px-2 sm:px-5 relative select-none">
+                <div class="flex items-center justify-between px-0.5 pb-1 text-[10px] sm:text-xs text-[#d6c5a3] font-medium">
+                    <span id="pianoRangeLabel">Keys: C4 – G4</span>
+                    <span class="sm:hidden">Tap keys to answer</span>
+                    <span class="hidden sm:inline">Click keys or press A–G</span>
+                </div>
+                <div id="pianoContainer" class="relative w-full h-32 sm:h-40 md:h-44 flex">
+                    <!-- Keys dynamically generated by JS -->
+                </div>
+            </div>
+
+            <!-- BOTTOM HALF: Warm Cream Sheet Music Paper with Crimson Binder Edges -->
+            <div class="music-sheet flex-1 flex flex-col justify-between p-3 sm:p-5">
+                <!-- Cozy Card Sub-header -->
+                <div class="flex items-center justify-between gap-2">
+                    <span id="challengeBadge" class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-display font-semibold bg-[#e0edff] text-[#13449e] border border-[#b6d4fe]">
+                        Say the letters out loud
+                    </span>
+
+                    <button id="playSoundBtn" type="button" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-[#f5ecd8] hover:bg-[#ebdec2] active:bg-[#e0cfa9] text-[#3d2a1f] border border-[#cbb894] transition cursor-pointer shadow-sm" title="Hear the notes">
+                        <svg class="w-3.5 h-3.5 text-[#1d63dc]" fill="currentColor" viewBox="0 0 20 20"><path d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.984 5.984 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.983 3.983 0 00-1.172-2.828 1 1 0 010-1.415z"/></svg>
+                        <span>Replay</span>
+                    </button>
+                </div>
+
+                <!-- Responsive SVG Staff -->
+                <div class="w-full flex items-center justify-center my-auto py-1">
+                    <svg id="staffSvg" viewBox="0 0 820 220" class="w-full h-auto max-h-40 sm:max-h-52 overflow-visible">
+                        <!-- Staff lines, Clef, Ledger lines, and Blue Counters rendered dynamically -->
+                    </svg>
+                </div>
+
+                <!-- Answer Banner -->
+                <div id="answerBanner" class="min-h-[36px] flex flex-wrap items-center justify-center gap-1.5 transition-all">
+                    <p id="promptText" class="text-[#5c4332] text-xs sm:text-sm text-center">
+                        Say the note names out loud, then tap <strong class="text-[#2c1e16] font-semibold">Reveal &amp; Hear</strong>
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Cozy Parchment Bottom Control Dock -->
+        <section aria-label="Practice Controls" class="bg-[#f5ecd8] border border-[#d6c5a3] rounded-2xl p-2 sm:p-2.5 shadow-md flex flex-col gap-2">
+
+            <!-- Voice Recognition Live Transcript Bar (Only visible when Mic is active) -->
+            <div id="voiceFeedbackBar" class="hidden bg-[#fcf8ee] border border-[#cbb894] rounded-xl px-3 py-1.5 flex items-center justify-between gap-2 text-xs">
+                <div class="flex items-center gap-2">
+                    <span class="inline-block w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+                    <span class="text-[#5c4332] font-medium">Listening (A–G):</span>
+                    <span id="heardLettersDisplay" class="font-display font-bold text-[#1d63dc] tracking-wider"></span>
+                </div>
+                <button id="clearHeardBtn" type="button" class="text-[#785a46] hover:text-[#2c1e16] font-semibold cursor-pointer">Clear</button>
+            </div>
+
+            <!-- Main Row: Tactile Primary Flashcard Actions + Subtle Utility Icon Toggles -->
+            <div class="flex items-center gap-1.5 sm:gap-2">
+                <!-- Primary Action: Reveal & Hear (Warm Espresso / Amber-Accented Tactile Button) -->
+                <button id="revealBtn" type="button" class="flex-1 h-11 sm:h-12 flex items-center justify-center gap-1.5 px-3 sm:px-4 rounded-xl font-display font-semibold text-xs sm:text-sm bg-[#2c1e16] hover:bg-[#3d2a1f] active:bg-[#1f150f] text-[#fdf6e7] border-b-2 border-[#140d09] shadow-sm transition cursor-pointer">
+                    <span>Reveal &amp; Hear</span>
+                </button>
+
+                <!-- Secondary Primary Action: Next Pattern (Glossy Cobalt Blue Tactile Button) -->
+                <button id="nextBtn" type="button" class="flex-1 h-11 sm:h-12 flex items-center justify-center gap-1.5 px-3 sm:px-4 rounded-xl font-display font-semibold text-xs sm:text-sm bg-gradient-to-b from-[#2b72eb] to-[#1d63dc] hover:from-[#3b82f6] hover:to-[#2563eb] active:from-[#1d4ed8] active:to-[#1e40af] text-white border-b-2 border-[#13449e] shadow-sm transition cursor-pointer">
+                    <span>Next Pattern</span>
+                    <span aria-hidden="true">→</span>
+                </button>
+
+                <!-- Subtle Icon Toggle: Speech Recognition Mic -->
+                <button id="micBtn" type="button" class="relative h-11 sm:h-12 px-3 rounded-xl flex items-center justify-center gap-1.5 bg-[#fcf8ee] hover:bg-white text-[#3d2a1f] border border-[#cbb894] text-xs font-semibold transition cursor-pointer shrink-0" title="Toggle Voice Auto-Listen">
+                    <span id="micIcon" class="text-sm">🎙️</span>
+                    <span id="micLabel" class="hidden md:inline">Mic Off</span>
+                </button>
+
+                <!-- Subtle Icon Toggle: Browser Synth Audio Mute -->
+                <button id="synthMuteBtn" type="button" class="h-11 sm:h-12 px-3 rounded-xl flex items-center justify-center gap-1.5 bg-[#fcf8ee] hover:bg-white text-[#3d2a1f] border border-[#cbb894] text-xs font-semibold transition cursor-pointer shrink-0" title="Toggle built-in piano audio (mute when using P-125 speakers or Pianoteq)">
+                    <span id="synthMuteIcon" class="text-sm">🔊</span>
+                    <span id="synthMuteLabel" class="hidden md:inline">Audio</span>
+                </button>
+            </div>
+
+            <!-- Compact Warm Cream A–G Pill Strip -->
+            <div class="grid grid-cols-7 gap-1 sm:gap-1.5">
+                <button type="button" data-letter="C" class="letter-btn h-9 sm:h-10 rounded-lg bg-[#fcf8ee] hover:bg-[#e0edff] hover:text-[#13449e] hover:border-[#8fc0ff] active:bg-[#1d63dc] active:text-white text-[#2c1e16] font-display font-semibold text-sm border border-[#cbb894] border-b-2 transition cursor-pointer">C</button>
+                <button type="button" data-letter="D" class="letter-btn h-9 sm:h-10 rounded-lg bg-[#fcf8ee] hover:bg-[#e0edff] hover:text-[#13449e] hover:border-[#8fc0ff] active:bg-[#1d63dc] active:text-white text-[#2c1e16] font-display font-semibold text-sm border border-[#cbb894] border-b-2 transition cursor-pointer">D</button>
+                <button type="button" data-letter="E" class="letter-btn h-9 sm:h-10 rounded-lg bg-[#fcf8ee] hover:bg-[#e0edff] hover:text-[#13449e] hover:border-[#8fc0ff] active:bg-[#1d63dc] active:text-white text-[#2c1e16] font-display font-semibold text-sm border border-[#cbb894] border-b-2 transition cursor-pointer">E</button>
+                <button type="button" data-letter="F" class="letter-btn h-9 sm:h-10 rounded-lg bg-[#fcf8ee] hover:bg-[#e0edff] hover:text-[#13449e] hover:border-[#8fc0ff] active:bg-[#1d63dc] active:text-white text-[#2c1e16] font-display font-semibold text-sm border border-[#cbb894] border-b-2 transition cursor-pointer">F</button>
+                <button type="button" data-letter="G" class="letter-btn h-9 sm:h-10 rounded-lg bg-[#fcf8ee] hover:bg-[#e0edff] hover:text-[#13449e] hover:border-[#8fc0ff] active:bg-[#1d63dc] active:text-white text-[#2c1e16] font-display font-semibold text-sm border border-[#cbb894] border-b-2 transition cursor-pointer">G</button>
+                <button type="button" data-letter="A" class="letter-btn h-9 sm:h-10 rounded-lg bg-[#fcf8ee] hover:bg-[#e0edff] hover:text-[#13449e] hover:border-[#8fc0ff] active:bg-[#1d63dc] active:text-white text-[#2c1e16] font-display font-semibold text-sm border border-[#cbb894] border-b-2 transition cursor-pointer">A</button>
+                <button type="button" data-letter="B" class="letter-btn h-9 sm:h-10 rounded-lg bg-[#fcf8ee] hover:bg-[#e0edff] hover:text-[#13449e] hover:border-[#8fc0ff] active:bg-[#1d63dc] active:text-white text-[#2c1e16] font-display font-semibold text-sm border border-[#cbb894] border-b-2 transition cursor-pointer">B</button>
+            </div>
+        </section>
+    </main>
+
+    <!-- Custom Non-Blocking Toast Message Box -->
+    <div id="toastBox" role="status" aria-live="polite" style="top: calc(var(--safe-top) + 3.75rem)" class="fixed left-1/2 -translate-x-1/2 z-50 pointer-events-none opacity-0 transition-opacity duration-300 bg-[#2c1e16]/95 text-[#fdf6e7] border border-[#5e4332] px-4 py-2 rounded-full shadow-lg text-xs font-medium text-center max-w-xs sm:max-w-sm">
+    </div>
+
+    <script>
+        /**
+         * Piano & Staff Note Identification Game (Mobile & Desktop Edition)
+         * Inspired by Hoffman Academy's blue magnetic counters on piano keys & staff.
+         */
+
+        // ==========================================
+        // 1. MUSICAL DATA & NOTE DEFINITIONS
+        // ==========================================
+        const ALL_NOTES = [
+            { id: 'F2', letter: 'F', octave: 2, midi: 41, freq: 87.31,  clef: 'bass' },
+            { id: 'G2', letter: 'G', octave: 2, midi: 43, freq: 98.00,  clef: 'bass' },
+            { id: 'A2', letter: 'A', octave: 2, midi: 45, freq: 110.00, clef: 'bass'  },
+            { id: 'B2', letter: 'B', octave: 2, midi: 47, freq: 123.47, clef: 'bass'  },
+            { id: 'C3', letter: 'C', octave: 3, midi: 48, freq: 130.81, clef: 'bass'  },
+            { id: 'D3', letter: 'D', octave: 3, midi: 50, freq: 146.83, clef: 'bass'  },
+            { id: 'E3', letter: 'E', octave: 3, midi: 52, freq: 164.81, clef: 'bass'  },
+            { id: 'F3', letter: 'F', octave: 3, midi: 53, freq: 174.61, clef: 'bass'  },
+            { id: 'G3', letter: 'G', octave: 3, midi: 55, freq: 196.00, clef: 'bass'  },
+            { id: 'A3', letter: 'A', octave: 3, midi: 57, freq: 220.00, clef: 'bass'  },
+            { id: 'B3', letter: 'B', octave: 3, midi: 59, freq: 246.94, clef: 'bass'  },
+            { id: 'C4', letter: 'C', octave: 4, midi: 60, freq: 261.63, clef: 'treble' },
+            { id: 'D4', letter: 'D', octave: 4, midi: 62, freq: 293.66, clef: 'treble' },
+            { id: 'E4', letter: 'E', octave: 4, midi: 64, freq: 329.63, clef: 'treble'  },
+            { id: 'F4', letter: 'F', octave: 4, midi: 65, freq: 349.23, clef: 'treble'  },
+            { id: 'G4', letter: 'G', octave: 4, midi: 67, freq: 392.00, clef: 'treble'  },
+            { id: 'A4', letter: 'A', octave: 4, midi: 69, freq: 440.00, clef: 'treble'  },
+            { id: 'B4', letter: 'B', octave: 4, midi: 71, freq: 493.88, clef: 'treble'  },
+            { id: 'C5', letter: 'C', octave: 5, midi: 72, freq: 523.25, clef: 'treble'  },
+            { id: 'D5', letter: 'D', octave: 5, midi: 74, freq: 587.33, clef: 'treble'  },
+            { id: 'E5', letter: 'E', octave: 5, midi: 76, freq: 659.25, clef: 'treble'  },
+            { id: 'F5', letter: 'F', octave: 5, midi: 77, freq: 698.46, clef: 'treble'  },
+            { id: 'G5', letter: 'G', octave: 5, midi: 79, freq: 783.99, clef: 'treble'  }
+        ];
+
+        const MIDI_PITCH_CLASSES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+        // Staff position is derived from the note itself: diatonic index (octave*7 + letter).
+        // Bottom line is E4 on the treble staff and G2 on the bass staff.
+        const LETTER_INDEX = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
+        const noteDiatonic = n => n.octave * 7 + LETTER_INDEX[n.letter];
+        const CLEF_FONT = "'Apple Symbols','Segoe UI Symbol','Noto Music',serif";
+
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        // Pick the note a typed/tapped letter should sound like for the current level
+        function playLetterTone(letter) {
+            const expected = state.currentSequence[state.userTypedLetters.length];
+            let note = (expected && !state.isRevealed && expected.letter === letter) ? expected : null;
+            if (!note) {
+                const anchorId = LEVELS[state.level].noteIds[0];
+                const anchor = ALL_NOTES.find(n => n.id === anchorId).midi;
+                note = ALL_NOTES.filter(n => n.letter === letter)
+                    .sort((a, b) => Math.abs(a.midi - anchor) - Math.abs(b.midi - anchor))[0];
+            }
+            if (note) playPianoTone(note.freq, 0.45, 0);
+        }
+
+        // Level definitions with both Desktop and Mobile-focused keyboard windows
+        const LEVELS = {
+            pentascale: {
+                clef: 'treble',
+                noteIds: ['C4', 'D4', 'E4', 'F4', 'G4'],
+                pianoRangeDesktop: ['C3', 'G5'],
+                pianoRangeMobile: ['C4', 'B4']
+            },
+            treble_octave: {
+                clef: 'treble',
+                noteIds: ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'],
+                pianoRangeDesktop: ['C3', 'G5'],
+                pianoRangeMobile: ['C4', 'C5']
+            },
+            treble_full: {
+                clef: 'treble',
+                noteIds: ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5', 'D5', 'E5', 'F5', 'G5'],
+                pianoRangeDesktop: ['C3', 'G5'],
+                pianoRangeMobile: ['C4', 'G5']
+            },
+            bass_pentascale: {
+                clef: 'bass',
+                noteIds: ['C3', 'D3', 'E3', 'F3', 'G3'],
+                pianoRangeDesktop: ['F2', 'C5'],
+                pianoRangeMobile: ['C3', 'B3']
+            },
+            bass_full: {
+                clef: 'bass',
+                noteIds: ['F2', 'G2', 'A2', 'B2', 'C3', 'D3', 'E3', 'F3', 'G3', 'A3', 'B3', 'C4'],
+                pianoRangeDesktop: ['F2', 'C5'],
+                pianoRangeMobile: ['F2', 'C4']
+            },
+            grand_staff: {
+                clef: 'grand',
+                noteIds: ['G2', 'A2', 'B2', 'C3', 'D3', 'E3', 'F3', 'G3', 'A3', 'B3', 'C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'],
+                pianoRangeDesktop: ['F2', 'C5'],
+                pianoRangeMobile: ['G2', 'C5']
+            }
+        };
+
+        // ==========================================
+        // 2. GAME STATE
+        // ==========================================
+        const state = {
+            level: 'pentascale',
+            countMode: '5',
+            displayMode: 'both',
+            currentSequence: [],
+            isRevealed: false,
+            score: 0,
+            userTypedLetters: [],
+            isListening: false,
+            recognition: null,
+            drillSecondsLeft: 120,
+            drillTimerInterval: null,
+            drillRunning: false,
+            midiAccess: null,
+            midiConnected: false,
+            midiDeviceName: '',
+            midiPlayMode: 'answer',
+            synthMuted: false,
+            autoAdvanceTimer: null
+        };
+
+        // ==========================================
+        // 3. WEB AUDIO API + MOBILE TOUCH UNLOCK
+        // ==========================================
+        let audioCtx = null;
+
+        let audioPrimed = false;
+        function unlockAudioContext() {
+            try {
+                if (!audioCtx) {
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioContextClass) return;
+                    audioCtx = new AudioContextClass();
+                }
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                if (!audioPrimed) {
+                    const source = audioCtx.createBufferSource();
+                    source.buffer = audioCtx.createBuffer(1, 1, 22050);
+                    source.connect(audioCtx.destination);
+                    source.start(0);
+                    audioPrimed = true;
+                }
+            } catch (e) {}
+        }
+
+        // iOS only unlocks audio on touchend/click, so listen for all of them
+        ['touchstart', 'touchend', 'pointerdown', 'click', 'keydown'].forEach(evt => {
+            window.addEventListener(evt, unlockAudioContext, { passive: true });
+        });
+
+        function playPianoTone(freq, duration = 0.65, delay = 0, ignoreMute = false) {
+            if (state.synthMuted && !ignoreMute) return;
+            try {
+                unlockAudioContext();
+                if (!audioCtx) return;
+
+                const startTime = audioCtx.currentTime + delay;
+
+                const osc1 = audioCtx.createOscillator();
+                const osc2 = audioCtx.createOscillator();
+                const osc3 = audioCtx.createOscillator();
+
+                osc1.type = 'triangle';
+                osc2.type = 'sine';
+                osc3.type = 'sine';
+
+                osc1.frequency.setValueAtTime(freq, startTime);
+                osc2.frequency.setValueAtTime(freq * 2, startTime);
+                osc3.frequency.setValueAtTime(freq * 3, startTime);
+
+                const gain1 = audioCtx.createGain();
+                const gain2 = audioCtx.createGain();
+                const gain3 = audioCtx.createGain();
+                const masterGain = audioCtx.createGain();
+
+                gain1.gain.value = 0.55;
+                gain2.gain.value = 0.18;
+                gain3.gain.value = 0.05;
+
+                masterGain.gain.setValueAtTime(0.001, startTime);
+                masterGain.gain.linearRampToValueAtTime(0.45, startTime + 0.015);
+                masterGain.gain.exponentialRampToValueAtTime(0.15, startTime + 0.25);
+                masterGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+                osc1.connect(gain1);
+                osc2.connect(gain2);
+                osc3.connect(gain3);
+
+                gain1.connect(masterGain);
+                gain2.connect(masterGain);
+                gain3.connect(masterGain);
+                masterGain.connect(audioCtx.destination);
+
+                osc1.start(startTime);
+                osc2.start(startTime);
+                osc3.start(startTime);
+
+                osc1.stop(startTime + duration + 0.05);
+                osc2.stop(startTime + duration + 0.05);
+                osc3.stop(startTime + duration + 0.05);
+            } catch (err) {
+                console.warn('Audio playback skipped:', err);
+            }
+        }
+
+        function playGentleThud() {
+            if (state.synthMuted) return;
+            try {
+                unlockAudioContext();
+                if (!audioCtx) return;
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(115, now);
+                osc.frequency.exponentialRampToValueAtTime(58, now + 0.16);
+                gain.gain.setValueAtTime(0.28, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.2);
+            } catch (e) {}
+        }
+
+        function toggleSynthMute() {
+            state.synthMuted = !state.synthMuted;
+            const btn = document.getElementById('synthMuteBtn');
+            const icon = document.getElementById('synthMuteIcon');
+            const label = document.getElementById('synthMuteLabel');
+
+            if (state.synthMuted) {
+                icon.textContent = '🔇';
+                label.textContent = 'Muted';
+                btn.classList.remove('text-[#3d2a1f]', 'bg-[#fcf8ee]', 'border-[#cbb894]');
+                btn.classList.add('text-amber-900', 'border-amber-400', 'bg-amber-100');
+                showToast('Browser audio muted (ideal for P-125 speakers or Pianoteq).');
+            } else {
+                icon.textContent = '🔊';
+                label.textContent = 'Audio';
+                btn.classList.remove('text-amber-900', 'border-amber-400', 'bg-amber-100');
+                btn.classList.add('text-[#3d2a1f]', 'bg-[#fcf8ee]', 'border-[#cbb894]');
+                showToast('Browser piano audio enabled.');
+            }
+        }
+
+        let sequenceTimers = [];
+        function clearSequenceTimers() {
+            sequenceTimers.forEach(clearTimeout);
+            sequenceTimers = [];
+            document.querySelectorAll('.white-key.pressed').forEach(k => k.classList.remove('pressed'));
+        }
+
+        function playSequenceAudio(highlightDots = true) {
+            clearSequenceTimers();
+            state.currentSequence.forEach((n, i) => highlightDotIndex(i, false));
+
+            state.currentSequence.forEach((note, idx) => {
+                const start = () => {
+                    playPianoTone(note.freq, 0.65, 0);
+                    if (highlightDots) {
+                        highlightDotIndex(idx, true);
+                        pressPianoKeyVisual(note.id, true);
+                    }
+                };
+                if (idx === 0) start();
+                else sequenceTimers.push(setTimeout(start, idx * 420));
+
+                if (highlightDots) {
+                    sequenceTimers.push(setTimeout(() => {
+                        highlightDotIndex(idx, false);
+                        pressPianoKeyVisual(note.id, false);
+                    }, idx * 420 + 350));
+                }
+            });
+        }
+
+        // ==========================================
+        // 4. TOAST & 2-MINUTE DRILL TIMER
+        // ==========================================
+        let toastTimer = null;
+        function showToast(msg) {
+            const box = document.getElementById('toastBox');
+            box.textContent = msg;
+            box.classList.remove('opacity-0');
+            box.classList.add('opacity-100');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                box.classList.remove('opacity-100');
+                box.classList.add('opacity-0');
+            }, 3000);
+        }
+
+        function toggleDrillTimer() {
+            const timerDisplay = document.getElementById('timerDisplay');
+            if (state.drillRunning) {
+                clearInterval(state.drillTimerInterval);
+                state.drillRunning = false;
+                state.drillSecondsLeft = 120;
+                timerDisplay.textContent = '2:00';
+                showToast('2-minute drill timer reset.');
+                return;
+            }
+
+            state.drillRunning = true;
+            state.drillSecondsLeft = 120;
+            state.drillStartScore = state.score;
+            timerDisplay.textContent = '2:00';
+            showToast('2-minute daily drill started! Go!');
+
+            state.drillTimerInterval = setInterval(() => {
+                state.drillSecondsLeft -= 1;
+                const mins = Math.floor(state.drillSecondsLeft / 60);
+                const secs = state.drillSecondsLeft % 60;
+                timerDisplay.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+
+                if (state.drillSecondsLeft <= 0) {
+                    clearInterval(state.drillTimerInterval);
+                    state.drillRunning = false;
+                    timerDisplay.textContent = 'Done!';
+                    const done = state.score - (state.drillStartScore || 0);
+                    showToast(`Time's up! You completed ${done} flashcard${done === 1 ? '' : 's'}!`);
+                }
+            }, 1000);
+        }
+
+        // ==========================================
+        // 5. PIANO KEYBOARD RENDERING (RESPONSIVE ZOOM)
+        // ==========================================
+        function getVisiblePianoNotes() {
+            const isMobile = window.innerWidth < 640;
+            const lvl = LEVELS[state.level];
+            const range = isMobile ? lvl.pianoRangeMobile : lvl.pianoRangeDesktop;
+
+            const startIdx = ALL_NOTES.findIndex(n => n.id === range[0]);
+            const endIdx = ALL_NOTES.findIndex(n => n.id === range[1]);
+            const notes = ALL_NOTES.slice(startIdx, endIdx + 1);
+
+            const rangeLabel = document.getElementById('pianoRangeLabel');
+            if (rangeLabel && notes.length > 0) {
+                rangeLabel.textContent = `Keys: ${notes[0].id} – ${notes[notes.length - 1].id}`;
+            }
+            return notes;
+        }
+
+        function renderPiano() {
+            const container = document.getElementById('pianoContainer');
+            container.innerHTML = '';
+
+            const visibleNotes = getVisiblePianoNotes();
+            const totalWhiteKeys = visibleNotes.length;
+            const whiteKeyWidthPct = 100 / totalWhiteKeys;
+
+            visibleNotes.forEach((note, index) => {
+                const keyBtn = document.createElement('button');
+                keyBtn.type = 'button';
+                keyBtn.dataset.noteId = note.id;
+                keyBtn.dataset.letter = note.letter;
+                keyBtn.setAttribute('aria-label', `Piano key ${note.id}`);
+                keyBtn.style.width = `${whiteKeyWidthPct}%`;
+                keyBtn.className = 'white-key relative h-full flex flex-col items-center justify-end pb-1.5 sm:pb-3 focus:outline-none cursor-pointer';
+
+                if (note.letter === 'C') {
+                    const cMarker = document.createElement('span');
+                    cMarker.className = 'text-[9px] sm:text-xs font-bold text-stone-400 mb-0.5 pointer-events-none';
+                    cMarker.textContent = note.id;
+                    keyBtn.appendChild(cMarker);
+                }
+
+                const counterSlot = document.createElement('div');
+                counterSlot.className = 'key-counter-slot flex flex-col-reverse items-center gap-0.5 sm:gap-1 mb-0.5 pointer-events-none z-10';
+                keyBtn.appendChild(counterSlot);
+
+                keyBtn.addEventListener('click', () => {
+                    playPianoTone(note.freq, 0.6, 0);
+                    pressPianoKeyVisual(note.id, true);
+                    setTimeout(() => pressPianoKeyVisual(note.id, false), 220);
+                    handleLetterInput(note.letter);
+                });
+
+                container.appendChild(keyBtn);
+
+                const hasSharp = ['C', 'D', 'F', 'G', 'A'].includes(note.letter) && index < totalWhiteKeys - 1;
+                if (hasSharp) {
+                    const blackKey = document.createElement('div');
+                    const blackWidthPct = whiteKeyWidthPct * 0.62;
+                    const leftPct = (index + 1) * whiteKeyWidthPct - (blackWidthPct / 2);
+                    blackKey.style.width = `${blackWidthPct}%`;
+                    blackKey.style.left = `${leftPct}%`;
+                    blackKey.className = 'black-key absolute top-0 h-[56%] cursor-pointer';
+
+                    const sharpFreq = note.freq * Math.pow(2, 1 / 12);
+                    blackKey.dataset.sharpMidi = note.midi + 1;
+                    blackKey.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        playPianoTone(sharpFreq, 0.5, 0);
+                        blackKey.classList.add('pressed');
+                        setTimeout(() => blackKey.classList.remove('pressed'), 200);
+                    });
+
+                    container.appendChild(blackKey);
+                }
+            });
+
+            updatePianoCounters();
+        }
+
+        function pressPianoKeyVisual(noteId, isPressed) {
+            const keyEl = document.querySelector(`.white-key[data-note-id="${noteId}"]`);
+            if (!keyEl) return;
+            if (isPressed) keyEl.classList.add('pressed');
+            else keyEl.classList.remove('pressed');
+        }
+
+        function pressPianoMidiVisual(midiNumber, isPressed) {
+            const whiteEl = ALL_NOTES.find(n => n.midi === midiNumber);
+            if (whiteEl) {
+                pressPianoKeyVisual(whiteEl.id, isPressed);
+                return;
+            }
+            const blackEl = document.querySelector(`.black-key[data-sharp-midi="${midiNumber}"]`);
+            if (blackEl) {
+                if (isPressed) blackEl.classList.add('pressed');
+                else blackEl.classList.remove('pressed');
+            }
+        }
+
+        function updatePianoCounters() {
+            document.querySelectorAll('.key-counter-slot').forEach(slot => slot.innerHTML = '');
+
+            if (state.displayMode === 'staff' && !state.isRevealed) return;
+
+            const visibleCount = getVisiblePianoNotes().length;
+            const dotSizeClass = visibleCount <= 8
+                ? 'w-7 h-7 sm:w-9 sm:h-9 text-xs sm:text-sm'
+                : visibleCount <= 12
+                    ? 'w-5 h-5 sm:w-8 sm:h-8 text-[10px] sm:text-sm'
+                    : 'w-4 h-4 sm:w-7 sm:h-7 md:w-8 md:h-8 text-[9px] sm:text-xs';
+
+            state.currentSequence.forEach((note, seqIdx) => {
+                const keyEl = document.querySelector(`.white-key[data-note-id="${note.id}"]`);
+                if (!keyEl) return;
+                const slot = keyEl.querySelector('.key-counter-slot');
+
+                const isStepCompleted = state.isRevealed || seqIdx < state.userTypedLetters.length;
+
+                const dot = document.createElement('div');
+                dot.dataset.seqIdx = seqIdx;
+                dot.className = `blue-counter piano-dot ${dotSizeClass} rounded-full flex items-center justify-center text-white font-display font-bold shadow-md ${isStepCompleted ? 'revealed-correct' : ''}`;
+
+                if (isStepCompleted) {
+                    dot.textContent = note.letter;
+                } else {
+                    const duplicates = state.currentSequence.filter(n => n.id === note.id).length > 1;
+                    if (duplicates) {
+                        dot.textContent = seqIdx + 1;
+                    }
+                }
+
+                slot.appendChild(dot);
+            });
+        }
+
+        // ==========================================
+        // 6. MUSICAL STAFF SVG RENDERING
+        // ==========================================
+        function renderStaff() {
+            const svg = document.getElementById('staffSvg');
+            svg.innerHTML = '';
+
+            const clefType = LEVELS[state.level].clef;
+            const isMobile = window.innerWidth < 640;
+            const W = isMobile ? 520 : 820;
+            const isGrand = clefType === 'grand';
+
+            svg.setAttribute('viewBox', `0 0 ${W} ${isGrand ? 330 : 220}`);
+            svg.setAttribute('class', isGrand
+                ? 'w-full h-auto max-h-60 sm:max-h-64 overflow-visible'
+                : 'w-full h-auto max-h-40 sm:max-h-52 overflow-visible'
+            );
+
+            const lineSpacing = 21;
+            const trebleBottomY = isGrand ? 125 : 155;
+            const bassBottomY = 275;
+
+            function drawFiveLines(bottomY) {
+                for (let i = 0; i < 5; i++) {
+                    const y = bottomY - i * lineSpacing;
+                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    line.setAttribute('x1', '35');
+                    line.setAttribute('x2', String(W - 30));
+                    line.setAttribute('y1', y);
+                    line.setAttribute('y2', y);
+                    line.setAttribute('stroke', '#334155');
+                    line.setAttribute('stroke-width', '2');
+                    svg.appendChild(line);
+                }
+            }
+
+            if (isGrand) {
+                drawFiveLines(trebleBottomY);
+                drawFiveLines(bassBottomY);
+
+                const leftBar = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                leftBar.setAttribute('x1', '35');
+                leftBar.setAttribute('x2', '35');
+                leftBar.setAttribute('y1', trebleBottomY - 4 * lineSpacing);
+                leftBar.setAttribute('y2', bassBottomY);
+                leftBar.setAttribute('stroke', '#334155');
+                leftBar.setAttribute('stroke-width', '3');
+                svg.appendChild(leftBar);
+
+                const trebleClef = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                trebleClef.setAttribute('x', '46');
+                trebleClef.setAttribute('y', trebleBottomY + 8);
+                trebleClef.setAttribute('font-size', '145');
+                trebleClef.setAttribute('font-family', CLEF_FONT);
+                trebleClef.setAttribute('fill', '#2563EB');
+                trebleClef.textContent = '𝄞';
+                svg.appendChild(trebleClef);
+
+                const bassClef = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                bassClef.setAttribute('x', '50');
+                bassClef.setAttribute('y', bassBottomY - 12);
+                bassClef.setAttribute('font-size', '110');
+                bassClef.setAttribute('font-family', CLEF_FONT);
+                bassClef.setAttribute('fill', '#2563EB');
+                bassClef.textContent = '𝄢';
+                svg.appendChild(bassClef);
+            } else {
+                drawFiveLines(trebleBottomY);
+
+                const leftBar = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                leftBar.setAttribute('x1', '35');
+                leftBar.setAttribute('x2', '35');
+                leftBar.setAttribute('y1', trebleBottomY - 4 * lineSpacing);
+                leftBar.setAttribute('y2', trebleBottomY);
+                leftBar.setAttribute('stroke', '#334155');
+                leftBar.setAttribute('stroke-width', '2.5');
+                svg.appendChild(leftBar);
+
+                if (clefType === 'treble') {
+                    const clefText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    clefText.setAttribute('x', '48');
+                    clefText.setAttribute('y', trebleBottomY + 8);
+                    clefText.setAttribute('font-size', '148');
+                    clefText.setAttribute('font-family', CLEF_FONT);
+                    clefText.setAttribute('fill', '#2563EB');
+                    clefText.textContent = '𝄞';
+                    svg.appendChild(clefText);
+                } else {
+                    const clefText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    clefText.setAttribute('x', '52');
+                    clefText.setAttribute('y', trebleBottomY - 14);
+                    clefText.setAttribute('font-size', '114');
+                    clefText.setAttribute('font-family', CLEF_FONT);
+                    clefText.setAttribute('fill', '#2563EB');
+                    clefText.textContent = '𝄢';
+                    svg.appendChild(clefText);
+                }
+            }
+
+            if (state.displayMode === 'piano' && !state.isRevealed) {
+                const hint = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                hint.setAttribute('x', String(W / 2));
+                hint.setAttribute('y', isGrand ? '170' : '118');
+                hint.setAttribute('text-anchor', 'middle');
+                hint.setAttribute('fill', '#64748b');
+                hint.setAttribute('font-size', '19');
+                hint.setAttribute('font-weight', '600');
+                hint.textContent = 'Look at the blue dots on the piano keys above!';
+                svg.appendChild(hint);
+                return;
+            }
+
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            defs.innerHTML = `
+                <radialGradient id="blueCounterGrad" cx="32%" cy="28%" r="65%">
+                    <stop offset="0%" stop-color="#5da2ff"/>
+                    <stop offset="56%" stop-color="#1d63dc"/>
+                    <stop offset="100%" stop-color="#13449e"/>
+                </radialGradient>
+                <radialGradient id="greenCounterGrad" cx="35%" cy="30%" r="65%">
+                    <stop offset="0%" stop-color="#34D399"/>
+                    <stop offset="60%" stop-color="#10B981"/>
+                    <stop offset="100%" stop-color="#059669"/>
+                </radialGradient>
+                <radialGradient id="goldCounterGrad" cx="35%" cy="30%" r="65%">
+                    <stop offset="0%" stop-color="#fef08a"/>
+                    <stop offset="60%" stop-color="#f59e0b"/>
+                    <stop offset="100%" stop-color="#b45309"/>
+                </radialGradient>
+                <filter id="dotShadow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#1c1108" flood-opacity="0.4"/>
+                </filter>
+            `;
+            svg.appendChild(defs);
+
+            const count = state.currentSequence.length;
+            const noteSpan = isMobile ? 290 : 480;
+            const maxGap = isMobile ? 80 : 115;
+            const startX = count === 1 ? (isMobile ? 330 : 390) : (isMobile ? 185 : 215);
+            const spacingX = count === 1 ? 0 : Math.min(maxGap, noteSpan / (count - 1));
+
+            state.currentSequence.forEach((note, idx) => {
+                const cx = startX + idx * spacingX;
+
+                const useBass = clefType === 'bass' || (isGrand && note.octave < 4);
+                const activeBottomY = (useBass && isGrand) ? bassBottomY : trebleBottomY;
+                const step = noteDiatonic(note) - (useBass ? 18 : 30);
+                const cy = activeBottomY - step * (lineSpacing / 2);
+
+                const ledgerSteps = [];
+                if (step < 0) for (let ls = -2; ls >= step; ls -= 2) ledgerSteps.push(ls);
+                if (step > 8) for (let ls = 10; ls <= step; ls += 2) ledgerSteps.push(ls);
+                ledgerSteps.forEach(ls => {
+                    const ly = activeBottomY - ls * (lineSpacing / 2);
+                    const ledger = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    ledger.setAttribute('x1', cx - 28);
+                    ledger.setAttribute('x2', cx + 28);
+                    ledger.setAttribute('y1', ly);
+                    ledger.setAttribute('y2', ly);
+                    ledger.setAttribute('stroke', '#1e293b');
+                    ledger.setAttribute('stroke-width', '2.5');
+                    svg.appendChild(ledger);
+                });
+
+                const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                g.setAttribute('class', 'staff-dot-group transition-transform duration-200');
+                g.dataset.seqIdx = idx;
+                g.style.cursor = 'pointer';
+
+                g.addEventListener('click', () => {
+                    playPianoTone(note.freq, 0.65, 0);
+                    highlightDotIndex(idx, true);
+                    pressPianoKeyVisual(note.id, true);
+                    setTimeout(() => {
+                        highlightDotIndex(idx, false);
+                        pressPianoKeyVisual(note.id, false);
+                    }, 350);
+                });
+
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                const isStepCompleted = state.isRevealed || idx < state.userTypedLetters.length;
+                circle.setAttribute('cx', cx);
+                circle.setAttribute('cy', cy);
+                circle.setAttribute('r', '16.5');
+                circle.setAttribute('fill', isStepCompleted ? 'url(#greenCounterGrad)' : 'url(#blueCounterGrad)');
+                circle.setAttribute('stroke', isStepCompleted ? '#a7f3d0' : '#93c5fd');
+                circle.setAttribute('stroke-width', '2');
+                circle.setAttribute('filter', 'url(#dotShadow)');
+                g.appendChild(circle);
+
+                const gloss = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+                gloss.setAttribute('cx', cx - 4);
+                gloss.setAttribute('cy', cy - 6);
+                gloss.setAttribute('rx', '7');
+                gloss.setAttribute('ry', '3.5');
+                gloss.setAttribute('fill', 'rgba(255,255,255,0.35)');
+                g.appendChild(gloss);
+
+                if (isStepCompleted) {
+                    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    label.setAttribute('x', cx);
+                    label.setAttribute('y', cy + 6);
+                    label.setAttribute('text-anchor', 'middle');
+                    label.setAttribute('fill', '#ffffff');
+                    label.setAttribute('font-family', 'Fredoka, sans-serif');
+                    label.setAttribute('font-size', '18');
+                    label.setAttribute('font-weight', '700');
+                    label.textContent = note.letter;
+                    g.appendChild(label);
+                }
+
+                svg.appendChild(g);
+            });
+        }
+
+        function flashWrongDotIndex(idx, wrongNoteId = null) {
+            const pianoDots = document.querySelectorAll(`.piano-dot[data-seq-idx="${idx}"]`);
+            pianoDots.forEach(d => d.classList.add('wrong-flash'));
+
+            const staffGroups = document.querySelectorAll(`.staff-dot-group[data-seq-idx="${idx}"]`);
+            staffGroups.forEach(g => {
+                const circle = g.querySelector('circle');
+                if (circle) {
+                    circle.setAttribute('fill', '#ef4444');
+                    circle.setAttribute('stroke', '#fecaca');
+                }
+            });
+
+            if (wrongNoteId) {
+                const wrongKey = document.querySelector(`.white-key[data-note-id="${wrongNoteId}"]`);
+                if (wrongKey) wrongKey.classList.add('midi-wrong');
+            }
+
+            setTimeout(() => {
+                pianoDots.forEach(d => d.classList.remove('wrong-flash'));
+                staffGroups.forEach(g => {
+                    const circle = g.querySelector('circle');
+                    const isCompleted = state.isRevealed || idx < state.userTypedLetters.length;
+                    if (circle) {
+                        circle.setAttribute('fill', isCompleted ? 'url(#greenCounterGrad)' : 'url(#blueCounterGrad)');
+                        circle.setAttribute('stroke', isCompleted ? '#a7f3d0' : '#93c5fd');
+                    }
+                });
+                if (wrongNoteId) {
+                    const wrongKey = document.querySelector(`.white-key[data-note-id="${wrongNoteId}"]`);
+                    if (wrongKey) wrongKey.classList.remove('midi-wrong');
+                }
+            }, 340);
+        }
+
+        function highlightDotIndex(idx, isActive) {
+            const pianoDots = document.querySelectorAll(`.piano-dot[data-seq-idx="${idx}"]`);
+            pianoDots.forEach(d => {
+                if (isActive) d.classList.add('active-play');
+                else d.classList.remove('active-play');
+            });
+
+            const staffGroups = document.querySelectorAll(`.staff-dot-group[data-seq-idx="${idx}"]`);
+            staffGroups.forEach(g => {
+                const circle = g.querySelector('circle');
+                if (!circle) return;
+                if (isActive) {
+                    circle.setAttribute('fill', 'url(#goldCounterGrad)');
+                    circle.setAttribute('r', '19.5');
+                } else {
+                    const isStepCompleted = state.isRevealed || idx < state.userTypedLetters.length;
+                    circle.setAttribute('fill', isStepCompleted ? 'url(#greenCounterGrad)' : 'url(#blueCounterGrad)');
+                    circle.setAttribute('r', '16.5');
+                }
+            });
+        }
+
+        // ==========================================
+        // 7. CHALLENGE GENERATOR & GAME FLOW
+        // ==========================================
+        function generateChallenge(forceAscendingFirst = false) {
+            clearTimeout(state.autoAdvanceTimer);
+            clearSequenceTimers();
+            state.isRevealed = false;
+            state.userTypedLetters = [];
+            updateHeardDisplay();
+
+            const levelConfig = LEVELS[state.level];
+            const pool = levelConfig.noteIds.map(id => ALL_NOTES.find(n => n.id === id));
+
+            let numDots = 5;
+            if (state.countMode === 'random') {
+                const choices = [1, 2, 3, 4, 5];
+                numDots = choices[Math.floor(Math.random() * choices.length)];
+            } else {
+                numDots = parseInt(state.countMode, 10);
+            }
+
+            const sequence = [];
+
+            if (forceAscendingFirst && state.level === 'pentascale' && numDots === 5) {
+                sequence.push(...pool.slice(0, 5));
+            } else if (numDots === 1) {
+                let candidate = pool[Math.floor(Math.random() * pool.length)];
+                if (state.currentSequence.length === 1 && pool.length > 1) {
+                    while (candidate.id === state.currentSequence[0].id) {
+                        candidate = pool[Math.floor(Math.random() * pool.length)];
+                    }
+                }
+                sequence.push(candidate);
+            } else {
+                let currentIdx = Math.floor(Math.random() * pool.length);
+                sequence.push(pool[currentIdx]);
+
+                for (let i = 1; i < numDots; i++) {
+                    const intervals = [-2, -1, -1, 1, 1, 2];
+                    let delta = intervals[Math.floor(Math.random() * intervals.length)];
+                    let nextIdx = currentIdx + delta;
+
+                    if (nextIdx < 0 || nextIdx >= pool.length) {
+                        nextIdx = currentIdx - delta;
+                    }
+                    nextIdx = Math.max(0, Math.min(pool.length - 1, nextIdx));
+                    currentIdx = nextIdx;
+                    sequence.push(pool[currentIdx]);
+                }
+            }
+
+            state.currentSequence = sequence;
+
+            const badge = document.getElementById('challengeBadge');
+            badge.className = 'inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-display font-semibold bg-[#e0edff] text-[#13449e] border border-[#b6d4fe]';
+            badge.textContent = numDots === 1 ? 'Say the note name out loud' : `Say the ${numDots} notes left to right`;
+
+            const answerBanner = document.getElementById('answerBanner');
+            const isMidiAnswerMode = state.midiConnected && state.midiPlayMode === 'answer';
+            answerBanner.innerHTML = `
+                <p class="text-[#5c4332] text-xs sm:text-sm text-center">
+                    ${isMidiAnswerMode
+                        ? `Say &amp; play on <strong class="text-[#2c1e16] font-semibold">${escapeHtml(state.midiDeviceName || 'your MIDI piano')}</strong>`
+                        : `Read the blue ${numDots === 1 ? 'dot' : 'dots'} out loud, then tap <strong class="text-[#2c1e16] font-semibold">Reveal &amp; Hear</strong>`
+                    }
+                </p>
+            `;
+
+            renderPiano();
+            renderStaff();
+        }
+
+        function revealAnswer(earnedPoint = true, playAudio = true) {
+            if (!state.isRevealed) {
+                state.isRevealed = true;
+                if (earnedPoint) {
+                    state.score += 1;
+                    document.getElementById('scoreDisplay').textContent = state.score;
+                }
+            }
+
+            const badge = document.getElementById('challengeBadge');
+            badge.className = 'inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-display font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300';
+            badge.textContent = '✓ Answer Revealed';
+
+            const answerBanner = document.getElementById('answerBanner');
+            const badgesHtml = state.currentSequence.map((note, idx) => `
+                <span class="inline-flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-emerald-600 text-white font-display font-bold text-sm sm:text-base shadow-sm border border-emerald-300">
+                    ${note.letter}
+                </span>
+                ${idx < state.currentSequence.length - 1 ? '<span class="text-[#9e856d] font-semibold">–</span>' : ''}
+            `).join('');
+
+            answerBanner.innerHTML = `
+                <div class="flex flex-wrap items-center justify-center gap-1 sm:gap-1.5">
+                    ${badgesHtml}
+                </div>
+            `;
+
+            updatePianoCounters();
+            renderStaff();
+            if (playAudio) {
+                playSequenceAudio(true);
+            }
+        }
+
+        // ==========================================
+        // 8. INPUT HANDLING (VOICE, TAP, OR MIDI)
+        // ==========================================
+        function handleLetterInput(letter, options = {}) {
+            const { fromMidi = false, midiNoteObj = null, rawMidiNumber = null } = options;
+            if (state.isRevealed) return;
+
+            const currentStepIdx = state.userTypedLetters.length;
+            const expectedNoteObj = state.currentSequence[currentStepIdx];
+            if (!expectedNoteObj) return;
+
+            let isMatch = false;
+            if (fromMidi && rawMidiNumber !== null) {
+                const playedPitchName = MIDI_PITCH_CLASSES[rawMidiNumber % 12];
+                isMatch = (rawMidiNumber === expectedNoteObj.midi) || (playedPitchName === expectedNoteObj.letter);
+            } else {
+                isMatch = (letter === expectedNoteObj.letter);
+            }
+
+            if (isMatch) {
+                state.userTypedLetters.push(expectedNoteObj.letter);
+                updateHeardDisplay();
+                updatePianoCounters();
+                renderStaff();
+
+                highlightDotIndex(currentStepIdx, true);
+                setTimeout(() => highlightDotIndex(currentStepIdx, false), 260);
+
+                if (state.userTypedLetters.length === state.currentSequence.length) {
+                    const expectedLetters = state.currentSequence.map(n => n.letter);
+                    if (fromMidi) {
+                        revealAnswer(true, false);
+                        showToast(`✓ Nailed ${expectedLetters.join(' - ')}!`);
+                        state.autoAdvanceTimer = setTimeout(() => {
+                            generateChallenge(false);
+                        }, 650);
+                    } else {
+                        showToast(`Awesome! You got ${expectedLetters.join(' - ')}!`);
+                        revealAnswer(true, true);
+                    }
+                }
+            } else {
+                updateHeardDisplay(letter);
+                flashWrongDotIndex(currentStepIdx, fromMidi && midiNoteObj ? midiNoteObj.id : null);
+                if (fromMidi) playGentleThud();
+            }
+        }
+
+        function updateHeardDisplay(wrongLetter = null) {
+            const display = document.getElementById('heardLettersDisplay');
+            if (!display) return;
+            const matched = state.userTypedLetters.join(' · ');
+            if (wrongLetter) {
+                display.innerHTML = `${matched ? matched + ' · ' : ''}<span class="text-rose-400 line-through">${wrongLetter}</span>`;
+            } else {
+                display.textContent = matched;
+            }
+        }
+
+        // ==========================================
+        // 9. WEB SPEECH API ("SAY IT OUT LOUD" MIC)
+        // ==========================================
+        const SPOKEN_MAP = {
+            'a': 'A', 'ay': 'A', 'eh': 'A', 'hey': 'A', 'eight': 'A',
+            'b': 'B', 'be': 'B', 'bee': 'B', 'beat': 'B',
+            'c': 'C', 'see': 'C', 'sea': 'C', 'si': 'C',
+            'd': 'D', 'dee': 'D', 'the': 'D', 'de': 'D',
+            'e': 'E', 'ee': 'E', 'he': 'E',
+            'f': 'F', 'eff': 'F', 'ef': 'F', 'if': 'F',
+            'g': 'G', 'gee': 'G', 'ji': 'G', 'jeep': 'G'
+        };
+
+        function setupSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                return null;
+            }
+
+            const recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            let processedWordCount = 0;
+
+            recognition.onstart = () => {
+                state.isListening = true;
+                processedWordCount = 0;
+                const micBtn = document.getElementById('micBtn');
+                micBtn.classList.add('mic-pulse', 'bg-red-100', 'text-red-700', 'border-red-300');
+                micBtn.classList.remove('bg-[#fcf8ee]', 'text-[#3d2a1f]', 'border-[#cbb894]');
+                document.getElementById('micLabel').textContent = 'Listening';
+                document.getElementById('voiceFeedbackBar').classList.remove('hidden');
+            };
+
+            recognition.onresult = (event) => {
+                const result = event.results[event.results.length - 1];
+                const transcript = result[0].transcript.trim().toLowerCase();
+
+                const tokens = transcript
+                    .replace(/[^a-z\s]/g, '')
+                    .split(/\s+/)
+                    .flatMap(word => {
+                        if (word.length > 1 && /^[a-g]+$/.test(word)) {
+                            return word.split('');
+                        }
+                        return [word];
+                    });
+
+                if (result.isFinal) {
+                    for (let i = processedWordCount; i < tokens.length; i++) {
+                        const mapped = SPOKEN_MAP[tokens[i]];
+                        if (mapped) handleLetterInput(mapped);
+                    }
+                    processedWordCount = 0;
+                } else {
+                    for (let i = processedWordCount; i < tokens.length; i++) {
+                        const mapped = SPOKEN_MAP[tokens[i]];
+                        if (mapped) {
+                            handleLetterInput(mapped);
+                            processedWordCount = i + 1;
+                        }
+                    }
+                }
+            };
+
+            recognition.onerror = (e) => {
+                if (['not-allowed', 'service-not-allowed', 'audio-capture', 'network', 'language-not-supported'].includes(e.error)) {
+                    showToast(e.error === 'not-allowed' || e.error === 'service-not-allowed'
+                        ? 'Mic permission blocked. Allow microphone access, or say the letters out loud and tap Reveal & Hear!'
+                        : 'Voice recognition is unavailable right now. Say the letters out loud and tap Reveal & Hear!');
+                    stopListening();
+                }
+            };
+
+            recognition.onend = () => {
+                if (state.isListening) {
+                    try {
+                        recognition.start();
+                    } catch (err) {
+                        stopListening();
+                    }
+                }
+            };
+
+            return recognition;
+        }
+
+        function toggleListening() {
+            if (!state.recognition) {
+                state.recognition = setupSpeechRecognition();
+            }
+            if (!state.recognition) {
+                showToast('Auto-Listen mic is unavailable on this mobile browser—just say letters out loud and tap Reveal & Hear!');
+                return;
+            }
+
+            if (state.isListening) {
+                stopListening();
+            } else {
+                try {
+                    state.recognition.start();
+                    showToast('Mic on! Say the note letters out loud.');
+                } catch (err) {
+                    console.warn(err);
+                    showToast('Could not start the microphone. Try again.');
+                }
+            }
+        }
+
+        function stopListening() {
+            state.isListening = false;
+            if (state.recognition) {
+                try { state.recognition.stop(); } catch (e) {}
+            }
+            const micBtn = document.getElementById('micBtn');
+            micBtn.classList.remove('mic-pulse', 'bg-red-100', 'text-red-700', 'border-red-300');
+            micBtn.classList.add('bg-[#fcf8ee]', 'text-[#3d2a1f]', 'border-[#cbb894]');
+            document.getElementById('micLabel').textContent = 'Mic Off';
+            document.getElementById('voiceFeedbackBar').classList.add('hidden');
+        }
+
+        // ==========================================
+        // 10. WEB MIDI API (YAMAHA P-125 / USB MIDI)
+        // ==========================================
+        function midiNumberToFreq(midiNote) {
+            return 440 * Math.pow(2, (midiNote - 69) / 12);
+        }
+
+        function handleMidiMessage(event) {
+            const [status, data1, data2] = event.data;
+            const command = status & 0xf0;
+
+            if (command === 0x90 && data2 > 0) {
+                const midiNumber = data1;
+                const pitchName = MIDI_PITCH_CLASSES[midiNumber % 12];
+                const matchedNoteObj = ALL_NOTES.find(n => n.midi === midiNumber) || null;
+
+                pressPianoMidiVisual(midiNumber, true);
+
+                if (!state.synthMuted) {
+                    playPianoTone(midiNumberToFreq(midiNumber), 0.65, 0);
+                }
+
+                if (state.midiPlayMode === 'answer') {
+                    handleLetterInput(pitchName, {
+                        fromMidi: true,
+                        midiNoteObj: matchedNoteObj,
+                        rawMidiNumber: midiNumber
+                    });
+                }
+            } else if (command === 0x80 || (command === 0x90 && data2 === 0)) {
+                pressPianoMidiVisual(data1, false);
+            }
+        }
+
+        function updateMidiUIState() {
+            const dot = document.getElementById('midiStatusDot');
+            const label = document.getElementById('midiStatusLabel');
+            const connectBtn = document.getElementById('midiConnectBtn');
+            const modeToggleBtn = document.getElementById('midiModeToggleBtn');
+
+            if (!navigator.requestMIDIAccess) {
+                dot.className = 'w-2 h-2 rounded-full bg-[#8c6d56] shrink-0';
+                label.textContent = 'MIDI Unavailable';
+                connectBtn.classList.add('opacity-60');
+                modeToggleBtn.classList.add('hidden');
+                modeToggleBtn.classList.remove('inline-flex');
+                return;
+            }
+
+            if (state.midiConnected) {
+                dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0';
+                label.textContent = state.midiDeviceName || 'MIDI Connected';
+                connectBtn.classList.remove('border-[#5e4332]', 'text-[#f5ecd8]', 'bg-[#3d2a1f]');
+                connectBtn.classList.add('border-emerald-400/50', 'text-emerald-200', 'bg-emerald-950/80');
+
+                modeToggleBtn.classList.remove('hidden');
+                modeToggleBtn.classList.add('inline-flex');
+            } else {
+                dot.className = 'w-2 h-2 rounded-full bg-amber-300/80 shrink-0';
+                label.textContent = state.midiAccess ? 'No MIDI Device' : 'Connect MIDI';
+                connectBtn.classList.remove('border-emerald-400/50', 'text-emerald-200', 'bg-emerald-950/80');
+                connectBtn.classList.add('border-[#5e4332]', 'text-[#f5ecd8]', 'bg-[#3d2a1f]');
+
+                modeToggleBtn.classList.add('hidden');
+                modeToggleBtn.classList.remove('inline-flex');
+            }
+        }
+
+        function bindMidiInputs() {
+            if (!state.midiAccess) return;
+            const inputs = Array.from(state.midiAccess.inputs.values());
+            const activeInputs = inputs.filter(inp => inp.state === 'connected');
+
+            activeInputs.forEach(input => {
+                input.onmidimessage = handleMidiMessage;
+            });
+
+            const wasConnected = state.midiConnected;
+            state.midiConnected = activeInputs.length > 0;
+            state.midiDeviceName = state.midiConnected
+                ? (activeInputs[0].name || 'USB MIDI Piano')
+                : '';
+
+            updateMidiUIState();
+
+            if (!wasConnected && state.midiConnected) {
+                showToast(`🎹 Connected: ${state.midiDeviceName}! Play the notes on your piano.`);
+                generateChallenge(false);
+            } else if (wasConnected && !state.midiConnected) {
+                showToast('MIDI keyboard disconnected.');
+            }
+        }
+
+        async function initWebMidi(userTriggered = false) {
+            if (!navigator.requestMIDIAccess) {
+                updateMidiUIState();
+                if (userTriggered) {
+                    showToast('Web MIDI is not supported on this browser (works in Chrome/Edge on Desktop & Android).');
+                }
+                return;
+            }
+
+            try {
+                if (!state.midiAccess) {
+                    state.midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+                    state.midiAccess.onstatechange = () => {
+                        bindMidiInputs();
+                    };
+                }
+                bindMidiInputs();
+
+                if (userTriggered && !state.midiConnected) {
+                    showToast('No MIDI keyboard detected yet—plug in your Yamaha P-125 via USB and it will auto-connect!');
+                }
+            } catch (err) {
+                updateMidiUIState();
+                if (userTriggered) {
+                    showToast('MIDI access denied. Check browser permissions for MIDI devices.');
+                }
+            }
+        }
+
+        function toggleMidiPlayMode() {
+            const icon = document.getElementById('midiModeIcon');
+            const label = document.getElementById('midiModeLabel');
+            const btn = document.getElementById('midiModeToggleBtn');
+
+            if (state.midiPlayMode === 'answer') {
+                state.midiPlayMode = 'free';
+                icon.textContent = '🎹';
+                label.textContent = 'Free Play';
+                btn.classList.remove('bg-emerald-100', 'text-emerald-900', 'border-emerald-300');
+                btn.classList.add('bg-sky-100', 'text-sky-900', 'border-sky-300');
+                showToast('Free Play mode: Keys light up on screen without advancing flashcards.');
+            } else {
+                state.midiPlayMode = 'answer';
+                icon.textContent = '🎯';
+                label.textContent = 'Play-to-Answer';
+                btn.classList.remove('bg-sky-100', 'text-sky-900', 'border-sky-300');
+                btn.classList.add('bg-emerald-100', 'text-emerald-900', 'border-emerald-300');
+                showToast('Play-to-Answer mode: Play each dot left-to-right to solve & auto-advance.');
+            }
+        }
+
+        // ==========================================
+        // 11. EVENT LISTENERS & INITIALIZATION
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', () => {
+            // Don't leave focus on mouse/touch-clicked buttons so Space/Enter shortcuts keep working
+            document.addEventListener('click', (e) => {
+                const b = e.target.closest && e.target.closest('button');
+                if (b && e.detail > 0) b.blur();
+            });
+
+            const filterBtn = document.getElementById('filterToggleBtn');
+            filterBtn.setAttribute('aria-expanded', 'true');
+            filterBtn.addEventListener('click', () => {
+                const nowHidden = document.getElementById('filterBar').classList.toggle('hidden');
+                filterBtn.setAttribute('aria-expanded', String(!nowHidden));
+            });
+
+            document.getElementById('midiConnectBtn').addEventListener('click', () => {
+                initWebMidi(true);
+            });
+
+            document.getElementById('synthMuteBtn').addEventListener('click', toggleSynthMute);
+
+            document.getElementById('midiModeToggleBtn').addEventListener('click', toggleMidiPlayMode);
+
+            document.getElementById('levelSelect').addEventListener('change', (e) => {
+                state.level = e.target.value;
+                e.target.blur();
+                generateChallenge(false);
+            });
+
+            document.getElementById('countSelect').addEventListener('change', (e) => {
+                state.countMode = e.target.value;
+                e.target.blur();
+                generateChallenge(false);
+            });
+
+            document.getElementById('displayModeSelect').addEventListener('change', (e) => {
+                state.displayMode = e.target.value;
+                e.target.blur();
+                renderPiano();
+                renderStaff();
+            });
+
+            document.getElementById('drillTimerBtn').addEventListener('click', toggleDrillTimer);
+
+            document.getElementById('revealBtn').addEventListener('click', () => {
+                revealAnswer(true);
+            });
+
+            document.getElementById('nextBtn').addEventListener('click', () => {
+                generateChallenge(false);
+            });
+
+            document.getElementById('playSoundBtn').addEventListener('click', () => {
+                playSequenceAudio(true);
+            });
+
+            document.getElementById('micBtn').addEventListener('click', () => {
+                toggleListening();
+            });
+
+            document.getElementById('clearHeardBtn').addEventListener('click', () => {
+                state.userTypedLetters = [];
+                updateHeardDisplay();
+                updatePianoCounters();
+                renderStaff();
+            });
+
+            document.querySelectorAll('.letter-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const letter = btn.dataset.letter;
+                    playLetterTone(letter);
+                    handleLetterInput(letter);
+                });
+            });
+
+            let resizeTimeout;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(() => {
+                    renderPiano();
+                    renderStaff();
+                }, 150);
+            });
+
+            window.addEventListener('keydown', (e) => {
+                if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+                const tag = e.target.tagName;
+                if (tag === 'SELECT' || tag === 'INPUT' || tag === 'TEXTAREA') return;
+                const onButton = tag === 'BUTTON';
+
+                if (/^[a-gA-G]$/.test(e.key)) {
+                    const letter = e.key.toUpperCase();
+                    playLetterTone(letter);
+                    handleLetterInput(letter);
+                } else if (e.code === 'ArrowRight') {
+                    e.preventDefault();
+                    generateChallenge(false);
+                } else if (!onButton && e.code === 'Space') {
+                    e.preventDefault();
+                    if (!state.isRevealed) revealAnswer(true);
+                    else playSequenceAudio(true);
+                } else if (!onButton && e.code === 'Enter') {
+                    e.preventDefault();
+                    generateChallenge(false);
+                }
+            });
+
+            updateMidiUIState();
+            // Only auto-connect if MIDI permission was already granted (avoids a prompt on every load)
+            if (navigator.permissions && navigator.permissions.query) {
+                navigator.permissions.query({ name: 'midi' })
+                    .then(p => { if (p.state === 'granted') initWebMidi(false); })
+                    .catch(() => {});
+            }
+            generateChallenge(true);
+        });
+    </script>
+</body>
+</html>
