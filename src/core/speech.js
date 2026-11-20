@@ -1,156 +1,113 @@
 /**
- * NoteReader — Speech Recognition Module ("Say It Out Loud")
- * Listens for spoken note names (A–G) with fuzzy phonetic mappings.
+ * Web Speech "say the note letter" listener (A–G).
+ *
+ *   const listener = createLetterListener({
+ *     onLetter: (letter) => …,       // 'A'…'G'
+ *     onStart, onStop,               // update your mic button
+ *     onError: (code) => …,          // fatal errors only (permission, network…); listener has stopped
+ *   });
+ *   listener.start();  // → { ok, reason }   reason: 'ok' | 'unsupported' | 'failed'
+ *   listener.stop();
+ *   listener.destroy();              // always call from unmount()
  */
-
 const SPOKEN_MAP = {
-    'a': 'A', 'ay': 'A', 'eh': 'A', 'hey': 'A', 'eight': 'A',
-    'b': 'B', 'be': 'B', 'bee': 'B', 'beat': 'B',
-    'c': 'C', 'see': 'C', 'sea': 'C', 'si': 'C',
-    'd': 'D', 'dee': 'D', 'the': 'D', 'de': 'D',
-    'e': 'E', 'ee': 'E', 'he': 'E',
-    'f': 'F', 'eff': 'F', 'ef': 'F', 'if': 'F',
-    'g': 'G', 'gee': 'G', 'ji': 'G', 'jeep': 'G'
+  a: 'A', ay: 'A', eh: 'A', hey: 'A', eight: 'A',
+  b: 'B', be: 'B', bee: 'B', beat: 'B',
+  c: 'C', see: 'C', sea: 'C', si: 'C',
+  d: 'D', dee: 'D', the: 'D', de: 'D',
+  e: 'E', ee: 'E', he: 'E',
+  f: 'F', eff: 'F', ef: 'F', if: 'F',
+  g: 'G', gee: 'G', ji: 'G', jeep: 'G',
 };
+const FATAL_ERRORS = ['not-allowed', 'service-not-allowed', 'audio-capture', 'network', 'language-not-supported'];
 
-class SpeechManager {
-    constructor() {
-        this.recognition = null;
-        this.isListening = false;
-        this.processedWordCount = 0;
-        this.noteListeners = new Set();
-        this.stateListeners = new Set();
-    }
+export const isSpeechSupported = () => !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 
-    isSupported() {
-        return typeof window !== 'undefined' &&
-            !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-    }
+export function createLetterListener({ lang = 'en-US', onLetter, onStart, onStop, onError } = {}) {
+  const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null;
+  let listening = false;
+  let processed = 0;
 
-    _initRecognition() {
-        if (this.recognition) return this.recognition;
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) return null;
+  function build() {
+    const r = new Ctor();
+    r.continuous = true;
+    r.interimResults = true;
+    r.lang = lang;
 
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'en-US';
+    r.onstart = () => {
+      if (!listening) { try { r.stop(); } catch (e) { /* ignore */ } return; }
+      processed = 0;
+      if (onStart) onStart();
+    };
 
-        recognition.onstart = () => {
-            this.isListening = true;
-            this.processedWordCount = 0;
-            this._notifyState(true);
-        };
+    r.onresult = (event) => {
+      const result = event.results[event.results.length - 1];
+      const transcript = result[0].transcript.trim().toLowerCase();
+      // "cab" → c, a, b  (runs of A–G letters are split into single letters)
+      const tokens = transcript
+        .replace(/[^a-z\s]/g, '')
+        .split(/\s+/)
+        .flatMap((w) => (w.length > 1 && /^[a-g]+$/.test(w) ? w.split('') : [w]));
 
-        recognition.onresult = (event) => {
-            const result = event.results[event.results.length - 1];
-            const transcript = result[0].transcript.trim().toLowerCase();
+      for (let i = processed; i < tokens.length; i++) {
+        const mapped = SPOKEN_MAP[tokens[i]];
+        if (!mapped) continue;
+        if (onLetter) onLetter(mapped);
+        if (!result.isFinal) processed = i + 1;
+      }
+      if (result.isFinal) processed = 0;
+    };
 
-            const tokens = transcript
-                .replace(/[^a-z\s]/g, '')
-                .split(/\s+/)
-                .flatMap(word => {
-                    if (word.length > 1 && /^[a-g]+$/.test(word)) {
-                        return word.split('');
-                    }
-                    return [word];
-                });
+    r.onerror = (e) => {
+      if (FATAL_ERRORS.includes(e.error)) {
+        api.stop();
+        if (onError) onError(e.error);
+      }
+    };
 
-            if (result.isFinal) {
-                for (let i = this.processedWordCount; i < tokens.length; i++) {
-                    const mapped = SPOKEN_MAP[tokens[i]];
-                    if (mapped) this._notifyNote(mapped);
-                }
-                this.processedWordCount = 0;
-            } else {
-                for (let i = this.processedWordCount; i < tokens.length; i++) {
-                    const mapped = SPOKEN_MAP[tokens[i]];
-                    if (mapped) {
-                        this._notifyNote(mapped);
-                        this.processedWordCount = i + 1;
-                    }
-                }
-            }
-        };
+    // Chrome ends continuous sessions on its own; restart while we still want to listen.
+    r.onend = () => {
+      if (!listening) return;
+      try { r.start(); } catch (err) { api.stop(); }
+    };
+    return r;
+  }
 
-        recognition.onerror = (e) => {
-            if (['not-allowed', 'service-not-allowed', 'audio-capture', 'network', 'language-not-supported'].includes(e.error)) {
-                this.stop();
-                this._notifyState(false, e.error);
-            }
-        };
-
-        recognition.onend = () => {
-            if (this.isListening) {
-                try {
-                    recognition.start();
-                } catch (err) {
-                    this.stop();
-                }
-            } else {
-                this._notifyState(false);
-            }
-        };
-
-        this.recognition = recognition;
-        return recognition;
-    }
+  const api = {
+    get supported() { return !!Ctor; },
+    get listening() { return listening; },
 
     start() {
-        if (!this.isSupported()) {
-            return { ok: false, error: 'unsupported' };
-        }
-        const rec = this._initRecognition();
-        if (!rec) return { ok: false, error: 'init_failed' };
-
-        try {
-            rec.start();
-            return { ok: true };
-        } catch (err) {
-            console.warn('Speech start error:', err);
-            return { ok: false, error: err.name || 'failed' };
-        }
-    }
+      if (!Ctor) return { ok: false, reason: 'unsupported' };
+      if (listening) return { ok: true, reason: 'ok' };
+      try {
+        if (!rec) rec = build();
+        listening = true;
+        rec.start();
+        return { ok: true, reason: 'ok' };
+      } catch (err) {
+        listening = false;
+        console.warn(err);
+        return { ok: false, reason: 'failed' };
+      }
+    },
 
     stop() {
-        this.isListening = false;
-        if (this.recognition) {
-            try {
-                this.recognition.stop();
-            } catch (e) {}
-        }
-        this._notifyState(false);
-    }
+      const was = listening;
+      listening = false;
+      if (rec) { try { rec.stop(); } catch (e) { /* ignore */ } }
+      if (was && onStop) onStop();
+    },
 
-    toggle() {
-        if (this.isListening) {
-            this.stop();
-            return false;
-        } else {
-            const res = this.start();
-            return res.ok;
-        }
-    }
-
-    onNote(fn) {
-        this.noteListeners.add(fn);
-        return () => this.noteListeners.delete(fn);
-    }
-
-    onStateChange(fn) {
-        this.stateListeners.add(fn);
-        fn({ isListening: this.isListening, error: null });
-        return () => this.stateListeners.delete(fn);
-    }
-
-    _notifyNote(letter) {
-        this.noteListeners.forEach(fn => fn(letter));
-    }
-
-    _notifyState(isListening, error = null) {
-        this.stateListeners.forEach(fn => fn({ isListening, error }));
-    }
+    destroy() {
+      listening = false;
+      if (rec) {
+        rec.onstart = rec.onresult = rec.onerror = rec.onend = null;
+        try { rec.abort(); } catch (e) { /* ignore */ }
+        rec = null;
+      }
+    },
+  };
+  return api;
 }
-
-export const speech = new SpeechManager();

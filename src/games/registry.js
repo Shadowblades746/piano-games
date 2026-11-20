@@ -1,41 +1,27 @@
 /**
- * NoteReader — Game Plugin Registry
- * Central registry for all piano practice mini-games.
- * Adding a new mini-game (e.g., Rhythm Tapping, Interval Sight-Reading) only requires:
- *  1. Creating a new game module in `src/games/<your-game>.js`
- *  2. Adding its entry to the `GAMES` array below!
+ * GAME REGISTRY — the single place that lists every game.
+ *
+ * To add a game:
+ *   1. Copy src/games/_template.js to src/games/my-game.js and build it.
+ *   2. Add ONE line to GAMES below.
+ * That's it: the nav tab, #/my-game route, lazy loading, keyboard routing and
+ * lifecycle cleanup are all handled by src/main.js.
+ *
+ * Entry fields:
+ *   id          unique, URL-safe slug (used in the #/route and as the storage namespace)
+ *   title       full name (tab tooltip / accessibility)
+ *   shortTitle  label shown on the nav tab
+ *   icon        emoji shown on the nav tab
+ *   load        () => import('./file.js')   — loaded only when first opened
+ *
+ * A game module's default export is a factory: (ctx) => ({ mount(root), unmount(), onKeyDown?(e) }).
+ * See _template.js for the full ctx API.
  */
-
-import noteFlashcards from './note-flashcards.js';
-import listenMatch from './listen-match.js';
-
 export const GAMES = [
-    {
-        id: 'note-flashcards',
-        title: 'Note Flashcards',
-        shortTitle: 'Flashcards',
-        icon: '🎯',
-        description: 'Sight-reading flashcards with Hoffman blue magnetic counters',
-        module: noteFlashcards
-    },
-    {
-        id: 'listen-match',
-        title: 'Listen & Match',
-        shortTitle: 'Listen & Match',
-        icon: '🎧',
-        description: 'Ear training: listen to a melody and pick the sheet music',
-        module: listenMatch
-    }
+  { id: 'note-flashcards', title: 'Note Flashcards', shortTitle: 'Flashcards', icon: '🎴', load: () => import('./note-flashcards.js') },
+  { id: 'listen-match',    title: 'Listen & Match',  shortTitle: 'Listen',     icon: '🎧', load: () => import('./listen-match.js') },
+  // { id: 'interval-reading', title: 'Interval Reading', shortTitle: 'Intervals', icon: '↕️', load: () => import('./interval-reading.js') },
 ];
 
-export function getAllGames() {
-    return GAMES;
-}
-
-export function getGameById(id) {
-    return GAMES.find(g => g.id === id) || GAMES[0];
-}
-
-export function getDefaultGameId() {
-    return GAMES[0].id;
-}
+export const DEFAULT_GAME_ID = GAMES[0].id;
+export const getGame = (id) => GAMES.find((g) => g.id === id) || null;

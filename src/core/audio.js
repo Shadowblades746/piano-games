@@ -1,426 +1,349 @@
 /**
- * NoteReader — Audio Engine
- * Features:
- *  - Salamander Grand Piano sample playback (Alexander Holm, CC BY 3.0)
- *  - Persistent CacheStorage for offline & instant reloads
- *  - Tuned convolution reverb & opened-up dynamic brightness filter (3500 + velNorm * 11500 Hz)
- *  - Velocity-sensitive playback, Note-Off release & Sustain Pedal (CC 64) tracking
- *  - Automatic 3-oscillator additive Web Audio synth fallback
- *  - Sequence playback helper with cancellation
- *  - Global mute toggle and mobile touch unlock
+ * Audio engine.
+ *  - Salamander Grand Piano samples (Alexander Holm, CC BY 3.0) with persistent
+ *    CacheStorage, so return visits load instantly and work offline.
+ *  - Velocity-sensitive playback, Note-Off release, Sustain Pedal (CC 64).
+ *  - Automatic fallback to a built-in Web Audio synth if samples can't load.
+ *  - iOS/Android touch unlock, mute toggle, and a cancellable sequence helper.
+ *
+ * The attribution required by CC BY 3.0 lives in the footer of index.html.
  */
+import { freqToMidi } from './notes.js';
+import { storage } from './storage.js';
 
-const BASES = [
-    'https://tonejs.github.io/audio/salamander/',
-    'https://cdn.jsdelivr.net/gh/Tonejs/audio@master/salamander/'
+// ---------- Sample sources (tried in order) ----------
+const SAMPLE_BASES = [
+  // './assets/salamander/',  // ← self-hosted copy: uncomment after adding the files (see README)
+  'https://tonejs.github.io/audio/salamander/',
+  'https://cdn.jsdelivr.net/gh/Tonejs/audio@master/salamander/',
 ];
-
-const SAMPLE_NAMES = [
-    'A1','C2','Ds2','Fs2','A2','C3','Ds3','Fs3','A3','C4',
-    'Ds4','Fs4','A4','C5','Ds5','Fs5','A5','C6','Ds6','Fs6','A6','C7'
-];
-
-const PITCH_CLASS_OFFSET = { C: 0, Ds: 3, Fs: 6, A: 9 };
-const midiOfSample = name => {
-    const oct = parseInt(name.slice(-1), 10);
-    const pc = name.slice(0, -1);
-    return (oct + 1) * 12 + PITCH_CLASS_OFFSET[pc];
-};
-
+const SAMPLE_NAMES = ['A1','C2','Ds2','Fs2','A2','C3','Ds3','Fs3','A3','C4','Ds4','Fs4','A4','C5','Ds5','Fs5','A5','C6','Ds6','Fs6','A6','C7'];
+const PC = { C: 0, Ds: 3, Fs: 6, A: 9 };
+const sampleMidi = (n) => (parseInt(n.slice(-1), 10) + 1) * 12 + PC[n.slice(0, -1)];
 const CACHE_NAME = 'notereader-salamander-v1';
 
-class AudioEngine {
-    constructor() {
-        this.audioCtx = null;
-        this.audioPrimed = false;
-        this.muted = false;
+// ---------- Module state ----------
+let ctx = null;
+let primed = false;
+let started = false;
+let bus = null;
+let sustainDown = false;
+let fetched = 0;
+let failed = 0;
+const raw = {};                      // undecoded ArrayBuffers waiting for an AudioContext
+const bufs = [];                     // decoded { midi, buffer }
+const activeVoices = new Map();      // midi -> voice held by a key
+const sustainedVoices = new Set();   // voices kept alive by the pedal
+const liveSequences = new Set();
 
-        this.rawBuffers = {};
-        this.sampleBuffers = [];
-        this.activeVoices = new Map();     // midi -> { src, gain, released }
-        this.sustainedVoices = new Set();  // voices held by sustain pedal
-        this.sustainDown = false;
-        this.reverbBus = null;
-
-        this.fetchedCount = 0;
-        this.failedCount = 0;
-        this.statusListeners = new Set();
-        this.muteListeners = new Set();
-        this.activeSequenceTimers = [];
-
-        this._setupUnlockListeners();
-        this._loadSamples();
-    }
-
-    _setupUnlockListeners() {
-        const unlock = () => {
-            this.unlockAudioContext();
-            setTimeout(() => this._decodePendingBuffers(), 0);
-        };
-        ['touchstart', 'touchend', 'pointerdown', 'click', 'keydown'].forEach(evt => {
-            window.addEventListener(evt, unlock, { passive: true });
-        });
-    }
-
-    unlockAudioContext() {
-        try {
-            if (!this.audioCtx) {
-                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                if (!AudioContextClass) return;
-                this.audioCtx = new AudioContextClass();
-            }
-            if (this.audioCtx.state === 'suspended') {
-                this.audioCtx.resume();
-            }
-            if (!this.audioPrimed) {
-                const silentBuf = this.audioCtx.createBuffer(1, 1, 22050);
-                const source = this.audioCtx.createBufferSource();
-                source.buffer = silentBuf;
-                source.connect(this.audioCtx.destination);
-                source.start(0);
-                this.audioPrimed = true;
-            }
-        } catch (err) {
-            console.warn('AudioContext unlock error:', err);
-        }
-    }
-
-    async _fetchWithCache(name) {
-        const cache = ('caches' in window) ? await caches.open(CACHE_NAME).catch(() => null) : null;
-        for (let i = 0; i < BASES.length; i++) {
-            const url = BASES[i] + name + '.mp3';
-            try {
-                if (cache) {
-                    const hit = await cache.match(url);
-                    if (hit) return await hit.arrayBuffer();
-                }
-                const res = await fetch(url);
-                if (!res.ok) continue;
-                if (cache) cache.put(url, res.clone()).catch(() => {});
-                return await res.arrayBuffer();
-            } catch (e) {
-                // Try fallback CDN
-            }
-        }
-        throw new Error(`Failed to load ${name}`);
-    }
-
-    _loadSamples() {
-        SAMPLE_NAMES.forEach(name => {
-            this._fetchWithCache(name)
-                .then(ab => {
-                    this.rawBuffers[name] = ab;
-                    this.fetchedCount++;
-                    this._notifyStatus();
-                    this._decodePendingBuffers();
-                })
-                .catch(() => {
-                    this.failedCount++;
-                    this._notifyStatus();
-                });
-        });
-        this._notifyStatus();
-    }
-
-    _decodePendingBuffers() {
-        if (!this.audioCtx) return;
-        Object.keys(this.rawBuffers).forEach(name => {
-            const ab = this.rawBuffers[name];
-            delete this.rawBuffers[name];
-            this.audioCtx.decodeAudioData(
-                ab,
-                buffer => {
-                    this.sampleBuffers.push({ midi: midiOfSample(name), buffer });
-                    this._notifyStatus();
-                },
-                () => {
-                    this.failedCount++;
-                    this._notifyStatus();
-                }
-            );
-        });
-    }
-
-    _getReverbBus() {
-        if (this.reverbBus && this.reverbBus.ctx === this.audioCtx) {
-            return this.reverbBus;
-        }
-        const ctx = this.audioCtx;
-        const input = ctx.createGain();
-        const dry = ctx.createGain();
-        dry.gain.value = 0.88;
-        const wet = ctx.createGain();
-        wet.gain.value = 0.22;
-
-        const tone = ctx.createBiquadFilter();
-        tone.type = 'lowpass';
-        tone.frequency.value = 6500;
-
-        const conv = ctx.createConvolver();
-        const len = Math.floor(ctx.sampleRate * 1.9);
-        const ir = ctx.createBuffer(2, len, ctx.sampleRate);
-        for (let c = 0; c < 2; c++) {
-            const d = ir.getChannelData(c);
-            for (let i = 0; i < len; i++) {
-                d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.8);
-            }
-        }
-        conv.buffer = ir;
-
-        input.connect(dry);
-        dry.connect(ctx.destination);
-        input.connect(conv);
-        conv.connect(tone);
-        tone.connect(wet);
-        wet.connect(ctx.destination);
-
-        this.reverbBus = { ctx, input };
-        return this.reverbBus;
-    }
-
-    _releaseVoice(voice, releaseTime = 0.42) {
-        if (!voice || voice.released || !this.audioCtx) return;
-        voice.released = true;
-        const now = this.audioCtx.currentTime;
-        try {
-            voice.gain.gain.cancelScheduledValues(now);
-            voice.gain.gain.setValueAtTime(Math.max(voice.gain.gain.value, 0.0005), now);
-            voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + releaseTime);
-            voice.src.stop(now + releaseTime + 0.05);
-        } catch (e) {}
-    }
-
-    _playSample(freq, duration, delay, velocity = 112, holdUntilNoteOff = false) {
-        if (!this.audioCtx || !this.sampleBuffers.length) return false;
-        const midi = 69 + 12 * Math.log2(freq / 440);
-        const midiRound = Math.round(midi);
-
-        let best = null;
-        for (const b of this.sampleBuffers) {
-            if (!best || Math.abs(b.midi - midi) < Math.abs(best.midi - midi)) {
-                best = b;
-            }
-        }
-        if (!best || Math.abs(best.midi - midi) > 3) return false;
-
-        const t = this.audioCtx.currentTime + (delay || 0);
-        const src = this.audioCtx.createBufferSource();
-        src.buffer = best.buffer;
-        src.playbackRate.value = Math.pow(2, (midi - best.midi) / 12);
-
-        const velNorm = Math.max(0.05, Math.min(1, velocity / 127));
-        const peakGain = 0.18 + Math.pow(velNorm, 1.35) * 0.82;
-
-        const filter = this.audioCtx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(3500 + velNorm * 11500, t);
-
-        const gain = this.audioCtx.createGain();
-        gain.gain.setValueAtTime(peakGain, t);
-
-        src.connect(filter);
-        filter.connect(gain);
-        gain.connect(this._getReverbBus().input);
-        src.start(t);
-
-        const voice = { src, gain, released: false };
-
-        if (holdUntilNoteOff) {
-            const prev = this.activeVoices.get(midiRound);
-            if (prev) this._releaseVoice(prev, 0.12);
-            this.activeVoices.set(midiRound, voice);
-            this.sustainedVoices.delete(voice);
-        } else {
-            const hold = Math.max(duration || 0.65, 0.55) * 1.5;
-            gain.gain.setValueAtTime(peakGain, t + hold);
-            gain.gain.exponentialRampToValueAtTime(0.0001, t + hold + 0.5);
-            src.stop(t + hold + 0.55);
-        }
-        return true;
-    }
-
-    _playSynth(freq, duration, delay) {
-        if (!this.audioCtx) return;
-        const startTime = this.audioCtx.currentTime + delay;
-
-        const osc1 = this.audioCtx.createOscillator();
-        const osc2 = this.audioCtx.createOscillator();
-        const osc3 = this.audioCtx.createOscillator();
-
-        osc1.type = 'triangle';
-        osc2.type = 'sine';
-        osc3.type = 'sine';
-
-        osc1.frequency.setValueAtTime(freq, startTime);
-        osc2.frequency.setValueAtTime(freq * 2, startTime);
-        osc3.frequency.setValueAtTime(freq * 3, startTime);
-
-        const gain1 = this.audioCtx.createGain();
-        const gain2 = this.audioCtx.createGain();
-        const gain3 = this.audioCtx.createGain();
-        const masterGain = this.audioCtx.createGain();
-
-        gain1.gain.value = 0.55;
-        gain2.gain.value = 0.18;
-        gain3.gain.value = 0.05;
-
-        masterGain.gain.setValueAtTime(0.001, startTime);
-        masterGain.gain.linearRampToValueAtTime(0.45, startTime + 0.015);
-        masterGain.gain.exponentialRampToValueAtTime(0.15, startTime + 0.25);
-        masterGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-        osc1.connect(gain1);
-        osc2.connect(gain2);
-        osc3.connect(gain3);
-
-        gain1.connect(masterGain);
-        gain2.connect(masterGain);
-        gain3.connect(masterGain);
-        masterGain.connect(this.audioCtx.destination);
-
-        osc1.start(startTime);
-        osc2.start(startTime);
-        osc3.start(startTime);
-
-        osc1.stop(startTime + duration + 0.05);
-        osc2.stop(startTime + duration + 0.05);
-        osc3.stop(startTime + duration + 0.05);
-    }
-
-    playNote(freq, duration = 0.65, delay = 0, { velocity = 112, holdUntilNoteOff = false, ignoreMute = false } = {}) {
-        if (this.muted && !ignoreMute) return;
-        try {
-            this.unlockAudioContext();
-            if (!this.audioCtx) return;
-
-            const handledBySample = this._playSample(freq, duration, delay, velocity, holdUntilNoteOff);
-            if (!handledBySample) {
-                this._playSynth(freq, duration, delay);
-            }
-        } catch (err) {
-            console.warn('Audio playback skipped:', err);
-        }
-    }
-
-    stopNote(midiNumber) {
-        const voice = this.activeVoices.get(midiNumber);
-        if (!voice) return;
-        this.activeVoices.delete(midiNumber);
-        if (this.sustainDown) {
-            this.sustainedVoices.add(voice);
-        } else {
-            this._releaseVoice(voice, 0.42);
-        }
-    }
-
-    setSustain(isDown) {
-        this.sustainDown = !!isDown;
-        if (!this.sustainDown) {
-            this.sustainedVoices.forEach(v => this._releaseVoice(v, 0.45));
-            this.sustainedVoices.clear();
-        }
-    }
-
-    playThud() {
-        if (this.muted) return;
-        try {
-            this.unlockAudioContext();
-            if (!this.audioCtx) return;
-            const now = this.audioCtx.currentTime;
-            const osc = this.audioCtx.createOscillator();
-            const gain = this.audioCtx.createGain();
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(115, now);
-            osc.frequency.exponentialRampToValueAtTime(58, now + 0.16);
-            gain.gain.setValueAtTime(0.28, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
-            osc.connect(gain);
-            gain.connect(this.audioCtx.destination);
-            osc.start(now);
-            osc.stop(now + 0.2);
-        } catch (e) {}
-    }
-
-    playSequence(items, { interval = 420, duration = 0.65, onStep = null, onDone = null, ignoreMute = false } = {}) {
-        this.clearSequence();
-        if (!items || !items.length) return;
-
-        items.forEach((item, idx) => {
-            const freq = typeof item === 'number' ? item : item.freq;
-            const delayMs = idx * interval;
-
-            const timer = setTimeout(() => {
-                this.playNote(freq, duration, 0, { ignoreMute });
-                if (onStep) onStep(item, idx);
-            }, delayMs);
-            this.activeSequenceTimers.push(timer);
-
-            if (onStep) {
-                const offTimer = setTimeout(() => {
-                    onStep(item, idx, false);
-                }, delayMs + Math.min(interval - 50, 350));
-                this.activeSequenceTimers.push(offTimer);
-            }
-        });
-
-        if (onDone) {
-            const endTimer = setTimeout(() => {
-                onDone();
-            }, items.length * interval);
-            this.activeSequenceTimers.push(endTimer);
-        }
-    }
-
-    clearSequence() {
-        this.activeSequenceTimers.forEach(clearTimeout);
-        this.activeSequenceTimers = [];
-    }
-
-    isMuted() {
-        return this.muted;
-    }
-
-    setMuted(val) {
-        this.muted = !!val;
-        this.muteListeners.forEach(fn => fn(this.muted));
-    }
-
-    toggleMute() {
-        this.setMuted(!this.muted);
-        return this.muted;
-    }
-
-    onMuteChange(fn) {
-        this.muteListeners.add(fn);
-        return () => this.muteListeners.delete(fn);
-    }
-
-    getStatus() {
-        const total = SAMPLE_NAMES.length;
-        if (this.sampleBuffers.length === total) {
-            return `Piano sound: Salamander Grand ✓ (${this.sampleBuffers.length}/${total} cached)`;
-        } else if (this.sampleBuffers.length > 0) {
-            return `Piano sound: Salamander Grand (${this.sampleBuffers.length}/${total} samples)`;
-        } else if (this.fetchedCount === 0 && this.failedCount >= total) {
-            return 'Piano sound: built-in synth (samples could not load)';
-        } else if (this.fetchedCount > 0) {
-            return 'Piano sound: samples cached, tap any key to enable';
-        } else {
-            return 'Piano sound: loading Salamander Grand…';
-        }
-    }
-
-    onStatusChange(fn) {
-        this.statusListeners.add(fn);
-        fn(this.getStatus());
-        return () => this.statusListeners.delete(fn);
-    }
-
-    _notifyStatus() {
-        const text = this.getStatus();
-        this.statusListeners.forEach(fn => fn(text));
-    }
+// ---------- Mute ----------
+let muted = !!storage.get('muted', false);
+const muteListeners = new Set();
+export const isMuted = () => muted;
+export function setMuted(value) {
+  muted = !!value;
+  storage.set('muted', muted);
+  muteListeners.forEach((fn) => fn(muted));
+}
+export const toggleMute = () => { setMuted(!muted); return muted; };
+export function onMuteChange(fn) {
+  muteListeners.add(fn);
+  return () => muteListeners.delete(fn);
 }
 
-export const audio = new AudioEngine();
-export const AUDIO_ATTRIBUTION = 'Piano samples: Salamander Grand Piano by Alexander Holm (CC BY 3.0)';
+// ---------- Sample status (footer text) ----------
+const statusListeners = new Set();
+export function getStatusText() {
+  const total = SAMPLE_NAMES.length;
+  if (bufs.length === total) return `Piano sound: Salamander Grand ✓ (${bufs.length}/${total} cached)`;
+  if (bufs.length > 0) return `Piano sound: Salamander Grand (${bufs.length}/${total} samples)`;
+  if (fetched === 0 && failed >= total) return 'Piano sound: built-in synth (samples could not load)';
+  if (fetched > 0) return 'Piano sound: samples cached, tap any key to enable';
+  return 'Piano sound: loading Salamander Grand…';
+}
+export function onStatus(fn) {
+  statusListeners.add(fn);
+  fn(getStatusText());
+  return () => statusListeners.delete(fn);
+}
+const emitStatus = () => statusListeners.forEach((fn) => fn(getStatusText()));
+
+// ---------- AudioContext + mobile unlock ----------
+export const getAudioContext = () => ctx;
+
+export function unlock() {
+  try {
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      ctx = new AC();
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+    if (!primed) {
+      // A silent one-sample buffer is what actually unlocks iOS Safari.
+      const src = ctx.createBufferSource();
+      src.buffer = ctx.createBuffer(1, 1, 22050);
+      src.connect(ctx.destination);
+      src.start(0);
+      primed = true;
+    }
+    tryDecode();
+  } catch (e) { /* audio is best-effort */ }
+}
+
+function tryDecode() {
+  if (!ctx) return;
+  Object.keys(raw).forEach((name) => {
+    const ab = raw[name];
+    delete raw[name];
+    ctx.decodeAudioData(
+      ab,
+      (buffer) => { bufs.push({ midi: sampleMidi(name), buffer }); emitStatus(); },
+      () => { failed++; emitStatus(); },
+    );
+  });
+}
+
+async function fetchWithCache(name) {
+  const cache = ('caches' in window) ? await caches.open(CACHE_NAME).catch(() => null) : null;
+  for (const base of SAMPLE_BASES) {
+    const url = `${base}${name}.mp3`;
+    try {
+      if (cache) {
+        const hit = await cache.match(url);
+        if (hit) return await hit.arrayBuffer();
+      }
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      if (cache) cache.put(url, res.clone()).catch(() => {});
+      return await res.arrayBuffer();
+    } catch (e) { /* try next source */ }
+  }
+  throw new Error(`Failed to load ${name}`);
+}
+
+/** Call once at startup: attaches gesture unlockers and starts sample loading. */
+export function initAudio() {
+  if (started) return;
+  started = true;
+  // iOS only unlocks on touchend/click, so listen for all of them (app-lifetime listeners).
+  ['touchstart', 'touchend', 'pointerdown', 'click', 'keydown'].forEach((evt) => {
+    window.addEventListener(evt, unlock, { passive: true });
+  });
+  SAMPLE_NAMES.forEach((name) => {
+    fetchWithCache(name)
+      .then((ab) => { raw[name] = ab; fetched++; emitStatus(); tryDecode(); })
+      .catch(() => { failed++; emitStatus(); });
+  });
+  emitStatus();
+}
+
+// ---------- Sampled playback ----------
+function getBus() {
+  if (bus && bus.ctx === ctx) return bus;
+  const input = ctx.createGain();
+  const dry = ctx.createGain(); dry.gain.value = 0.88;
+  const wet = ctx.createGain(); wet.gain.value = 0.22;
+  const tone = ctx.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 6500;
+  const conv = ctx.createConvolver();
+  const len = Math.floor(ctx.sampleRate * 1.9);
+  const ir = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = ir.getChannelData(c);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.8);
+  }
+  conv.buffer = ir;
+  input.connect(dry); dry.connect(ctx.destination);
+  input.connect(conv); conv.connect(tone); tone.connect(wet); wet.connect(ctx.destination);
+  bus = { ctx, input };
+  return bus;
+}
+
+function releaseVoice(voice, releaseTime = 0.42) {
+  if (!voice || voice.released || !ctx) return;
+  voice.released = true;
+  const now = ctx.currentTime;
+  try {
+    voice.gain.gain.cancelScheduledValues(now);
+    voice.gain.gain.setValueAtTime(Math.max(voice.gain.gain.value, 0.0005), now);
+    voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + releaseTime);
+    voice.src.stop(now + releaseTime + 0.05);
+  } catch (e) { /* already stopped */ }
+}
+
+function playSampled(freq, duration, delay, velocity, hold) {
+  if (!ctx || !bufs.length) return false;
+  const midi = freqToMidi(freq);
+  const midiRound = Math.round(midi);
+
+  let best = null;
+  for (const b of bufs) {
+    if (!best || Math.abs(b.midi - midi) < Math.abs(best.midi - midi)) best = b;
+  }
+  if (!best || Math.abs(best.midi - midi) > 3) return false;
+
+  const t = ctx.currentTime + (delay || 0);
+  const src = ctx.createBufferSource();
+  src.buffer = best.buffer;
+  src.playbackRate.value = Math.pow(2, (midi - best.midi) / 12);
+
+  // Velocity-sensitive volume and an opened-up brightness filter.
+  const velNorm = Math.max(0.05, Math.min(1, velocity / 127));
+  const peakGain = 0.18 + Math.pow(velNorm, 1.35) * 0.82;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(3500 + velNorm * 11500, t);
+
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(peakGain, t);
+
+  src.connect(filter);
+  filter.connect(g);
+  g.connect(getBus().input);
+  src.start(t);
+
+  const voice = { src, gain: g, released: false };
+  if (hold) {
+    const prev = activeVoices.get(midiRound);
+    if (prev) releaseVoice(prev, 0.12);
+    activeVoices.set(midiRound, voice);
+    sustainedVoices.delete(voice);
+  } else {
+    const len = Math.max(duration || 0.65, 0.55) * 1.5;
+    g.gain.setValueAtTime(peakGain, t + len);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len + 0.5);
+    src.stop(t + len + 0.55);
+  }
+  return true;
+}
+
+// ---------- Synth fallback ----------
+function playSynth(freq, duration, delay) {
+  const start = ctx.currentTime + delay;
+  const master = ctx.createGain();
+  master.gain.setValueAtTime(0.001, start);
+  master.gain.linearRampToValueAtTime(0.45, start + 0.015);
+  master.gain.exponentialRampToValueAtTime(0.15, start + 0.25);
+  master.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  master.connect(ctx.destination);
+
+  [['triangle', 1, 0.55], ['sine', 2, 0.18], ['sine', 3, 0.05]].forEach(([type, mult, level]) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq * mult, start);
+    gain.gain.value = level;
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start(start);
+    osc.stop(start + duration + 0.05);
+  });
+}
+
+// ---------- Public API ----------
+/**
+ * Play one note. opts: { duration, delay, ignoreMute, velocity (1–127), hold }.
+ * hold = keep sounding until noteOff(midi) (live MIDI keys).
+ */
+export function playTone(freq, opts = {}) {
+  const { duration = 0.65, delay = 0, ignoreMute = false, velocity = 112, hold = false } = opts;
+  if (muted && !ignoreMute) return;
+  try {
+    unlock();
+    if (!ctx) return;
+    if (playSampled(freq, duration, delay, velocity, hold)) return;
+    playSynth(freq, duration, delay);
+  } catch (err) {
+    console.warn('Audio playback skipped:', err);
+  }
+}
+
+/** Release a held MIDI note (honours the sustain pedal). */
+export function noteOff(midiNumber) {
+  const voice = activeVoices.get(midiNumber);
+  if (!voice) return;
+  activeVoices.delete(midiNumber);
+  if (sustainDown) sustainedVoices.add(voice);
+  else releaseVoice(voice, 0.42);
+}
+
+/** Sustain pedal (CC 64). */
+export function setSustain(isDown) {
+  sustainDown = !!isDown;
+  if (!sustainDown) {
+    sustainedVoices.forEach((v) => releaseVoice(v, 0.45));
+    sustainedVoices.clear();
+  }
+}
+
+/** Short "nope" thud used for wrong MIDI answers. Respects mute. */
+export function playThud() {
+  if (muted) return;
+  try {
+    unlock();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(115, now);
+    osc.frequency.exponentialRampToValueAtTime(58, now + 0.16);
+    gain.gain.setValueAtTime(0.28, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.2);
+  } catch (e) { /* ignore */ }
+}
+
+/**
+ * Play notes one after another.
+ *   opts: { gap (ms between starts), duration (s), noteLength (ms the step stays "lit"),
+ *           ignoreMute, onStep(i, note), onStepEnd(i, note) }
+ * Returns { cancel() }. cancel() stops pending notes and fires onStepEnd for any
+ * step still lit, so UI highlights are always cleaned up.
+ */
+export function playSequence(notes, opts = {}) {
+  const { gap = 420, duration = 0.65, noteLength = 350, ignoreMute = false, onStep, onStepEnd } = opts;
+  const timers = new Set();
+  const lit = new Set();
+  const later = (fn, ms) => {
+    const id = setTimeout(() => { timers.delete(id); fn(); }, ms);
+    timers.add(id);
+  };
+
+  const handle = {
+    cancel() {
+      timers.forEach(clearTimeout);
+      timers.clear();
+      [...lit].forEach((i) => onStepEnd && onStepEnd(i, notes[i]));
+      lit.clear();
+      liveSequences.delete(handle);
+    },
+  };
+
+  notes.forEach((note, i) => {
+    const start = () => {
+      playTone(note.freq, { duration, ignoreMute });
+      lit.add(i);
+      if (onStep) onStep(i, note);
+    };
+    if (i === 0) start(); else later(start, i * gap);
+    later(() => { if (lit.delete(i) && onStepEnd) onStepEnd(i, note); }, i * gap + noteLength);
+  });
+  later(() => liveSequences.delete(handle), (notes.length - 1) * gap + noteLength + 1);
+
+  liveSequences.add(handle);
+  return handle;
+}
+
+/** Cancel every running sequence and release all held notes (used on game switch). */
+export function stopAll() {
+  [...liveSequences].forEach((h) => h.cancel());
+  activeVoices.forEach((v) => releaseVoice(v, 0.12));
+  activeVoices.clear();
+  sustainedVoices.forEach((v) => releaseVoice(v, 0.12));
+  sustainedVoices.clear();
+}

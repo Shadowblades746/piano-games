@@ -1,176 +1,144 @@
 /**
- * NoteReader — Overhead Piano Keyboard Component
- * Generates an interactive SVG/HTML piano keyboard with responsive ivory white keys,
- * ebony black keys, touch feedback, MIDI press states, and Hoffman blue magnetic tokens.
+ * Responsive overhead piano keyboard (white keys = natural notes from ALL_NOTES,
+ * black keys drawn between them).
+ *
+ *   const kb = createKeyboard(el, {
+ *     desktopRange: ['C3','G5'], mobileRange: ['C4','B4'],
+ *     onKeyPress(note, event) {}, onBlackKeyPress({ midi, freq }, event) {},
+ *   });
+ *   kb.render();                         // (re)build; call again on resize / range change
+ *   kb.setCounters([{ seqIdx, noteId, text, done }]);   // glossy counter badges on keys
+ *   kb.pressNote('C4', true);  kb.pressMidi(61, true);  // highlight from MIDI / playback
+ *   kb.flagCounter(idx, 'active-play' | 'wrong-flash', on);  kb.markWrong('C4', true);
+ *   kb.destroy();
  */
+import { noteForMidi, notesBetween } from '../core/notes.js';
+import { isMobileViewport } from '../core/util.js';
 
-import { ALL_NOTES } from '../core/notes.js';
+export function createKeyboard(container, options = {}) {
+  let { desktopRange = ['C3', 'G5'], mobileRange = ['C4', 'B4'] } = options;
+  const { onKeyPress, onBlackKeyPress } = options;
+  let visible = [];
+  const timers = new Set();
 
-export class PianoKeyboard {
-    constructor(container, options = {}) {
-        this.container = container;
-        this.range = options.range || ['C4', 'G4'];
-        this.onKeyPress = options.onKeyPress || null;
-        this.onSharpPress = options.onSharpPress || null;
-        this.visibleNotes = [];
-    }
+  const later = (fn, ms) => {
+    const id = setTimeout(() => { timers.delete(id); fn(); }, ms);
+    timers.add(id);
+  };
+  const whiteKey = (noteId) => container.querySelector(`.white-key[data-note-id="${noteId}"]`);
 
-    setRange(range) {
-        this.range = range;
-        this.render();
-    }
+  function computeVisible() {
+    const range = isMobileViewport() ? mobileRange : desktopRange;
+    visible = notesBetween(range[0], range[1]);
+    return visible;
+  }
 
-    getVisibleNotes() {
-        const startIdx = ALL_NOTES.findIndex(n => n.id === this.range[0]);
-        const endIdx = ALL_NOTES.findIndex(n => n.id === this.range[1]);
-        if (startIdx === -1 || endIdx === -1) return ALL_NOTES.slice(11, 16); // Default C4-G4
-        return ALL_NOTES.slice(startIdx, endIdx + 1);
-    }
+  function render() {
+    computeVisible();
+    container.innerHTML = '';
+    const total = visible.length;
+    const widthPct = 100 / total;
 
-    render() {
-        if (!this.container) return;
-        this.container.innerHTML = '';
+    visible.forEach((note, index) => {
+      const key = document.createElement('button');
+      key.type = 'button';
+      key.dataset.noteId = note.id;
+      key.dataset.letter = note.letter;
+      key.setAttribute('aria-label', `Piano key ${note.id}`);
+      key.style.width = `${widthPct}%`;
+      key.className = 'white-key relative h-full flex flex-col items-center justify-end pb-1.5 sm:pb-3 focus:outline-none cursor-pointer';
 
-        this.visibleNotes = this.getVisibleNotes();
-        const totalWhiteKeys = this.visibleNotes.length;
-        if (totalWhiteKeys === 0) return;
+      if (note.letter === 'C') {
+        const marker = document.createElement('span');
+        marker.className = 'text-[9px] sm:text-xs font-bold text-stone-400 mb-0.5 pointer-events-none';
+        marker.textContent = note.id;
+        key.appendChild(marker);
+      }
 
-        const whiteKeyWidthPct = 100 / totalWhiteKeys;
+      const slot = document.createElement('div');
+      slot.className = 'key-counter-slot flex flex-col-reverse items-center gap-0.5 sm:gap-1 mb-0.5 pointer-events-none z-10';
+      key.appendChild(slot);
 
-        this.visibleNotes.forEach((note, index) => {
-            const keyBtn = document.createElement('button');
-            keyBtn.type = 'button';
-            keyBtn.dataset.noteId = note.id;
-            keyBtn.dataset.letter = note.letter;
-            keyBtn.setAttribute('aria-label', `Piano key ${note.id}`);
-            keyBtn.style.width = `${whiteKeyWidthPct}%`;
-            keyBtn.className = 'white-key relative h-full flex flex-col items-center justify-end pb-1.5 sm:pb-3 focus:outline-none cursor-pointer';
+      key.addEventListener('click', (e) => {
+        if (onKeyPress) onKeyPress(note, e);
+        pressNote(note.id, true);
+        later(() => pressNote(note.id, false), 220);
+      });
+      container.appendChild(key);
 
-            if (note.letter === 'C') {
-                const cMarker = document.createElement('span');
-                cMarker.className = 'text-[9px] sm:text-xs font-bold text-stone-400 mb-0.5 pointer-events-none';
-                cMarker.textContent = note.id;
-                keyBtn.appendChild(cMarker);
-            }
-
-            const counterSlot = document.createElement('div');
-            counterSlot.className = 'key-counter-slot flex flex-col-reverse items-center gap-0.5 sm:gap-1 mb-0.5 pointer-events-none z-10';
-            keyBtn.appendChild(counterSlot);
-
-            keyBtn.addEventListener('click', (e) => {
-                if (this.onKeyPress) {
-                    this.onKeyPress(note, e);
-                }
-            });
-
-            this.container.appendChild(keyBtn);
-
-            const hasSharp = ['C', 'D', 'F', 'G', 'A'].includes(note.letter) && index < totalWhiteKeys - 1;
-            if (hasSharp) {
-                const blackKey = document.createElement('div');
-                const blackWidthPct = whiteKeyWidthPct * 0.62;
-                const leftPct = (index + 1) * whiteKeyWidthPct - (blackWidthPct / 2);
-                blackKey.style.width = `${blackWidthPct}%`;
-                blackKey.style.left = `${leftPct}%`;
-                blackKey.className = 'black-key absolute top-0 h-[56%] cursor-pointer';
-
-                const sharpMidi = note.midi + 1;
-                const sharpFreq = note.freq * Math.pow(2, 1 / 12);
-                blackKey.dataset.sharpMidi = sharpMidi;
-
-                blackKey.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    blackKey.classList.add('pressed');
-                    setTimeout(() => blackKey.classList.remove('pressed'), 200);
-                    if (this.onSharpPress) {
-                        this.onSharpPress({ midi: sharpMidi, freq: sharpFreq }, e);
-                    }
-                });
-
-                this.container.appendChild(blackKey);
-            }
+      if (['C', 'D', 'F', 'G', 'A'].includes(note.letter) && index < total - 1) {
+        const black = document.createElement('div');
+        const blackW = widthPct * 0.62;
+        black.style.width = `${blackW}%`;
+        black.style.left = `${(index + 1) * widthPct - blackW / 2}%`;
+        black.className = 'black-key absolute top-0 h-[56%] cursor-pointer';
+        black.dataset.sharpMidi = note.midi + 1;
+        black.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (onBlackKeyPress) onBlackKeyPress({ midi: note.midi + 1, freq: note.freq * Math.pow(2, 1 / 12) }, e);
+          black.classList.add('pressed');
+          later(() => black.classList.remove('pressed'), 200);
         });
-    }
+        container.appendChild(black);
+      }
+    });
+  }
 
-    pressKeyVisual(noteId, isPressed) {
-        if (!this.container) return;
-        const keyEl = this.container.querySelector(`.white-key[data-note-id="${noteId}"]`);
-        if (!keyEl) return;
-        if (isPressed) keyEl.classList.add('pressed');
-        else keyEl.classList.remove('pressed');
-    }
+  function pressNote(noteId, on) {
+    const el = whiteKey(noteId);
+    if (el) el.classList.toggle('pressed', on);
+  }
 
-    pressMidiVisual(midiNumber, isPressed) {
-        if (!this.container) return;
-        const whiteNote = ALL_NOTES.find(n => n.midi === midiNumber);
-        if (whiteNote) {
-            this.pressKeyVisual(whiteNote.id, isPressed);
-            return;
-        }
-        const blackEl = this.container.querySelector(`.black-key[data-sharp-midi="${midiNumber}"]`);
-        if (blackEl) {
-            if (isPressed) blackEl.classList.add('pressed');
-            else blackEl.classList.remove('pressed');
-        }
-    }
+  function pressMidi(midiNumber, on) {
+    const natural = noteForMidi(midiNumber);
+    if (natural) { pressNote(natural.id, on); return; }
+    const black = container.querySelector(`.black-key[data-sharp-midi="${midiNumber}"]`);
+    if (black) black.classList.toggle('pressed', on);
+  }
 
-    flashWrongKey(noteId) {
-        if (!this.container) return;
-        const keyEl = this.container.querySelector(`.white-key[data-note-id="${noteId}"]`);
-        if (!keyEl) return;
-        keyEl.classList.add('midi-wrong');
-        setTimeout(() => keyEl.classList.remove('midi-wrong'), 340);
-    }
+  function setCounters(list = []) {
+    container.querySelectorAll('.key-counter-slot').forEach((s) => { s.innerHTML = ''; });
+    const n = visible.length;
+    const size = n <= 8
+      ? 'w-7 h-7 sm:w-9 sm:h-9 text-xs sm:text-sm'
+      : n <= 12
+        ? 'w-5 h-5 sm:w-8 sm:h-8 text-[10px] sm:text-sm'
+        : 'w-4 h-4 sm:w-7 sm:h-7 md:w-8 md:h-8 text-[9px] sm:text-xs';
 
-    updateCounters({
-        sequence = [],
-        completedCount = 0,
-        isRevealed = false,
-        displayMode = 'both'
-    } = {}) {
-        if (!this.container) return;
+    list.forEach(({ seqIdx, noteId, text = '', done = false }) => {
+      const slot = whiteKey(noteId)?.querySelector('.key-counter-slot');
+      if (!slot) return;
+      const dot = document.createElement('div');
+      dot.dataset.seqIdx = seqIdx;
+      dot.className = `blue-counter piano-dot ${size} rounded-full flex items-center justify-center text-white font-display font-bold shadow-md ${done ? 'revealed-correct' : ''}`;
+      dot.textContent = text;
+      slot.appendChild(dot);
+    });
+  }
 
-        this.container.querySelectorAll('.key-counter-slot').forEach(slot => {
-            slot.innerHTML = '';
-        });
+  const flagCounter = (seqIdx, cls, on) => {
+    container.querySelectorAll(`.piano-dot[data-seq-idx="${seqIdx}"]`).forEach((d) => d.classList.toggle(cls, on));
+  };
+  const markWrong = (noteId, on) => {
+    const el = whiteKey(noteId);
+    if (el) el.classList.toggle('midi-wrong', on);
+  };
+  const clearPressed = () => container.querySelectorAll('.white-key.pressed').forEach((k) => k.classList.remove('pressed'));
 
-        if (displayMode === 'staff' && !isRevealed) return;
-
-        const visibleCount = this.visibleNotes.length;
-        const dotSizeClass = visibleCount <= 8
-            ? 'w-7 h-7 sm:w-9 sm:h-9 text-xs sm:text-sm'
-            : visibleCount <= 12
-                ? 'w-5 h-5 sm:w-8 sm:h-8 text-[10px] sm:text-sm'
-                : 'w-4 h-4 sm:w-7 sm:h-7 md:w-8 md:h-8 text-[9px] sm:text-xs';
-
-        sequence.forEach((note, seqIdx) => {
-            const keyEl = this.container.querySelector(`.white-key[data-note-id="${note.id}"]`);
-            if (!keyEl) return;
-            const slot = keyEl.querySelector('.key-counter-slot');
-            if (!slot) return;
-
-            const isStepCompleted = isRevealed || seqIdx < completedCount;
-
-            const dot = document.createElement('div');
-            dot.dataset.seqIdx = seqIdx;
-            dot.className = `blue-counter piano-dot ${dotSizeClass} rounded-full flex items-center justify-center text-white font-display font-bold shadow-md ${isStepCompleted ? 'revealed-correct' : ''}`;
-
-            if (isStepCompleted) {
-                dot.textContent = note.letter;
-            } else {
-                const duplicates = sequence.filter(n => n.id === note.id).length > 1;
-                if (duplicates) {
-                    dot.textContent = seqIdx + 1;
-                }
-            }
-
-            slot.appendChild(dot);
-        });
-    }
-
+  return {
+    render,
+    setRanges(desktop, mobile) { desktopRange = desktop; mobileRange = mobile; },
+    get visibleNotes() { return visible.length ? visible : computeVisible(); },
+    get rangeLabel() {
+      const v = visible.length ? visible : computeVisible();
+      return v.length ? `Keys: ${v[0].id} – ${v[v.length - 1].id}` : '';
+    },
+    setCounters, pressNote, pressMidi, flagCounter, markWrong, clearPressed,
     destroy() {
-        if (this.container) {
-            this.container.innerHTML = '';
-        }
-    }
+      timers.forEach(clearTimeout);
+      timers.clear();
+      container.innerHTML = '';
+    },
+  };
 }
+

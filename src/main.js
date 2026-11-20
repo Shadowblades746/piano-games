@@ -1,284 +1,272 @@
 /**
- * NoteReader — App Bootstrapper & Main Orchestrator
- * Coordinates:
- *  - Static ES Modules architecture & lifecycle routing
- *  - Shared top navigation (Game Switcher, Web MIDI, 2-Min Drill Timer, Streak/Score, Mute)
- *  - Keyboard shortcut delegation to active game
- *  - Persistent storage & audio engine status tracking
+ * App shell: shared header (MIDI status, drill timer, ★ score, 🔥 streak, game switcher),
+ * hash router, MIDI→piano bridge, keyboard-shortcut delegation and game lifecycle.
+ *
+ * Lifecycle guarantee: switching games always runs  game.unmount() → scope.dispose() →
+ * audio.stopAll()  before the next game mounts, so timers, audio sequences, mic recognition,
+ * MIDI subscriptions and key handlers from an inactive game can never keep running.
  */
-
-import { audio, AUDIO_ATTRIBUTION } from './core/audio.js';
+import { GAMES, DEFAULT_GAME_ID, getGame } from './games/registry.js';
+import * as audio from './core/audio.js';
 import { midi } from './core/midi.js';
-import { speech } from './core/speech.js';
+import { midiToFreq } from './core/notes.js';
+import { createScope } from './core/scope.js';
 import { storage } from './core/storage.js';
 import { showToast } from './ui/toast.js';
-import { getAllGames, getGameById, getDefaultGameId } from './games/registry.js';
 
-class NoteReaderApp {
-    constructor() {
-        this.mountEl = document.getElementById('appMount');
-        this.activeGame = null;
-        this.activeGameId = null;
+const $ = (id) => document.getElementById(id);
+const PILL = 'inline-flex items-center gap-1 bg-[#3d2a1f] hover:bg-[#4e3729] border border-[#5e4332] rounded-full px-2.5 py-1 text-xs font-medium text-[#f5ecd8] transition cursor-pointer';
 
-        // Shared Session Stats & Drill Timer State
-        this.sessionScore = 0;
-        this.drillRunning = false;
-        this.drillSecondsLeft = 120;
-        this.drillStartScore = 0;
-        this.drillInterval = null;
+// ==========================================
+// Score & streak (shared across games)
+// ==========================================
+const session = { score: 0, streak: 0 };
 
-        this.init();
-    }
-
-    init() {
-        this._setupAudioMute();
-        this._setupMidi();
-        this._setupDrillTimer();
-        this._setupGameSwitcher();
-        this._setupKeyboardRouting();
-        this._setupBlurHandler();
-
-        // Restore active game from URL hash or storage
-        const hashMatch = window.location.hash.match(/game=([a-z0-9_-]+)/i);
-        const storedPrefs = storage.getPreferences();
-        const initialGameId = hashMatch ? hashMatch[1] : (storedPrefs.activeGameId || getDefaultGameId());
-
-        this.switchGame(initialGameId);
-
-        // Listen for browser back/forward navigation
-        window.addEventListener('hashchange', () => {
-            const match = window.location.hash.match(/game=([a-z0-9_-]+)/i);
-            if (match && match[1] !== this.activeGameId) {
-                this.switchGame(match[1]);
-            }
-        });
-    }
-
-    _setupAudioMute() {
-        const muteBtn = document.getElementById('synthMuteBtn');
-        const muteIcon = document.getElementById('synthMuteIcon');
-        const statusSpan = document.getElementById('pianoStatus');
-
-        audio.onStatusChange((statusText) => {
-            if (statusSpan) statusSpan.textContent = statusText;
-        });
-
-        const updateMuteUI = (isMuted) => {
-            if (!muteBtn || !muteIcon) return;
-            if (isMuted) {
-                muteIcon.textContent = '🔇';
-                muteBtn.classList.remove('text-[#3d2a1f]', 'bg-[#fcf8ee]', 'border-[#cbb894]');
-                muteBtn.classList.add('text-amber-900', 'border-amber-400', 'bg-amber-100');
-            } else {
-                muteIcon.textContent = '🔊';
-                muteBtn.classList.remove('text-amber-900', 'border-amber-400', 'bg-amber-100');
-                muteBtn.classList.add('text-[#3d2a1f]', 'bg-[#fcf8ee]', 'border-[#cbb894]');
-            }
-        };
-
-        const prefs = storage.getPreferences();
-        if (prefs.synthMuted) {
-            audio.setMuted(true);
-        }
-        updateMuteUI(audio.isMuted());
-
-        muteBtn?.addEventListener('click', () => {
-            const isMuted = audio.toggleMute();
-            storage.savePreferences({ synthMuted: isMuted });
-            updateMuteUI(isMuted);
-            showToast(isMuted
-                ? 'Browser audio muted (ideal for P-125 speakers or external synth).'
-                : 'Browser piano audio enabled.');
-        });
-    }
-
-    _setupMidi() {
-        const connectBtn = document.getElementById('midiConnectBtn');
-        const dot = document.getElementById('midiStatusDot');
-        const label = document.getElementById('midiStatusLabel');
-
-        const updateMidiUI = (state) => {
-            if (!dot || !label || !connectBtn) return;
-
-            if (!state.isSupported) {
-                dot.className = 'w-2 h-2 rounded-full bg-[#8c6d56] shrink-0';
-                label.textContent = 'MIDI Unavailable';
-                connectBtn.classList.add('opacity-60');
-                return;
-            }
-
-            if (state.connected) {
-                dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0';
-                label.textContent = state.deviceName || 'MIDI Connected';
-                connectBtn.classList.remove('border-[#5e4332]', 'text-[#f5ecd8]', 'bg-[#3d2a1f]');
-                connectBtn.classList.add('border-emerald-400/50', 'text-emerald-200', 'bg-emerald-950/80');
-            } else {
-                dot.className = 'w-2 h-2 rounded-full bg-amber-300/80 shrink-0';
-                label.textContent = state.hasAccess ? 'No MIDI Device' : 'Connect MIDI';
-                connectBtn.classList.remove('border-emerald-400/50', 'text-emerald-200', 'bg-emerald-950/80');
-                connectBtn.classList.add('border-[#5e4332]', 'text-[#f5ecd8]', 'bg-[#3d2a1f]');
-            }
-        };
-
-        midi.on('statechange', (state) => {
-            updateMidiUI(state);
-            if (state.wasConnected === false && state.connected) {
-                showToast(`🎹 Connected: ${state.deviceName}! You can play notes on your piano.`);
-            } else if (state.wasConnected === true && !state.connected) {
-                showToast('MIDI keyboard disconnected.');
-            }
-        });
-
-        connectBtn?.addEventListener('click', async () => {
-            const res = await midi.requestAccess(true);
-            if (!res.ok) {
-                if (res.error === 'unsupported') {
-                    showToast('Web MIDI is not supported on this browser (supported in Chrome/Edge on Desktop & Android).');
-                } else {
-                    showToast('MIDI permission denied. Check browser settings.');
-                }
-            } else if (!res.connected) {
-                showToast('Plug in your Yamaha P-125 or USB MIDI keyboard and it will auto-detect!');
-            }
-        });
-
-        updateMidiUI(midi.getState());
-    }
-
-    _setupDrillTimer() {
-        const timerBtn = document.getElementById('drillTimerBtn');
-        const timerDisplay = document.getElementById('timerDisplay');
-
-        timerBtn?.addEventListener('click', () => {
-            if (this.drillRunning) {
-                clearInterval(this.drillInterval);
-                this.drillRunning = false;
-                this.drillSecondsLeft = 120;
-                if (timerDisplay) timerDisplay.textContent = '2:00';
-                showToast('2-minute drill timer reset.');
-                return;
-            }
-
-            this.drillRunning = true;
-            this.drillSecondsLeft = 120;
-            this.drillStartScore = this.sessionScore;
-            if (timerDisplay) timerDisplay.textContent = '2:00';
-            showToast('2-minute daily drill started! Go!');
-
-            this.drillInterval = setInterval(() => {
-                this.drillSecondsLeft -= 1;
-                const mins = Math.floor(this.drillSecondsLeft / 60);
-                const secs = this.drillSecondsLeft % 60;
-                if (timerDisplay) {
-                    timerDisplay.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
-                }
-
-                if (this.drillSecondsLeft <= 0) {
-                    clearInterval(this.drillInterval);
-                    this.drillRunning = false;
-                    if (timerDisplay) timerDisplay.textContent = 'Done!';
-                    const doneCount = this.sessionScore - this.drillStartScore;
-                    showToast(`Time's up! You completed ${doneCount} pattern${doneCount === 1 ? '' : 's'}!`);
-                    audio.playNote(523.25, 0.4, 0); // C5 celebratory ping
-                }
-            }, 1000);
-        });
-    }
-
-    _setupGameSwitcher() {
-        const switcherContainer = document.getElementById('gameSwitcher');
-        if (!switcherContainer) return;
-
-        switcherContainer.innerHTML = '';
-        const games = getAllGames();
-
-        games.forEach(game => {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.dataset.gameId = game.id;
-            btn.className = 'game-switch-btn inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-xs font-semibold text-[#f5ecd8] border border-transparent cursor-pointer';
-            btn.innerHTML = `<span aria-hidden="true">${game.icon}</span><span>${game.shortTitle || game.title}</span>`;
-            btn.setAttribute('title', game.description);
-
-            btn.addEventListener('click', () => {
-                this.switchGame(game.id);
-            });
-
-            switcherContainer.appendChild(btn);
-        });
-    }
-
-    _updateGameSwitcherUI() {
-        const buttons = document.querySelectorAll('.game-switch-btn');
-        buttons.forEach(btn => {
-            if (btn.dataset.gameId === this.activeGameId) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
-        });
-    }
-
-    switchGame(gameId) {
-        const gameEntry = getGameById(gameId);
-        if (!gameEntry) return;
-
-        if (this.activeGame && this.activeGame.unmount) {
-            this.activeGame.unmount();
-        }
-
-        this.activeGameId = gameEntry.id;
-        this.activeGame = gameEntry.module;
-
-        // Persist preference and sync URL hash without reloading
-        storage.savePreferences({ activeGameId: this.activeGameId });
-        if (window.location.hash !== `#game=${this.activeGameId}`) {
-            history.replaceState(null, '', `#game=${this.activeGameId}`);
-        }
-
-        this._updateGameSwitcherUI();
-
-        // Game context containing shared services & hooks
-        const context = {
-            audio,
-            midi,
-            speech,
-            storage,
-            showToast,
-            updateHeaderScore: (score) => {
-                const scoreDisplay = document.getElementById('scoreDisplay');
-                if (scoreDisplay) scoreDisplay.textContent = score;
-            },
-            onScoreEarned: (currentStreakOrScore) => {
-                this.sessionScore += 1;
-                const scoreDisplay = document.getElementById('scoreDisplay');
-                if (scoreDisplay) scoreDisplay.textContent = currentStreakOrScore;
-            }
-        };
-
-        if (this.activeGame && this.activeGame.mount) {
-            this.activeGame.mount(this.mountEl, context);
-        }
-    }
-
-    _setupKeyboardRouting() {
-        window.addEventListener('keydown', (e) => {
-            if (this.activeGame && typeof this.activeGame.handleKeyDown === 'function') {
-                this.activeGame.handleKeyDown(e);
-            }
-        });
-    }
-
-    _setupBlurHandler() {
-        // Prevents mouse/touch clicks from retaining focus on buttons so keyboard shortcuts keep working
-        document.addEventListener('click', (e) => {
-            const b = e.target.closest && e.target.closest('button');
-            if (b && e.detail > 0) b.blur();
-        });
-    }
+function renderScore() {
+  $('scoreDisplay').textContent = session.score;
+  $('streakDisplay').textContent = session.streak;
 }
 
-// Bootstrap on DOM readiness
-document.addEventListener('DOMContentLoaded', () => {
-    window.noteReaderApp = new NoteReaderApp();
-});
+const score = {
+  get total() { return session.score; },
+  award(points = 1) { session.score += points; storage.addScore(points); renderScore(); },
+  hit() { session.streak += 1; storage.noteBestStreak(session.streak); renderScore(); },
+  miss() { if (session.streak) { session.streak = 0; renderScore(); } },
+};
+
+// ==========================================
+// 2-minute drill timer (keeps running while you switch games)
+// ==========================================
+const DRILL_SECONDS = 120;
+const drill = { left: DRILL_SECONDS, running: false, interval: null, startScore: 0 };
+
+function toggleDrillTimer() {
+  const display = $('timerDisplay');
+  if (drill.running) {
+    clearInterval(drill.interval);
+    Object.assign(drill, { running: false, left: DRILL_SECONDS });
+    display.textContent = '2:00';
+    showToast('2-minute drill timer reset.');
+    return;
+  }
+  Object.assign(drill, { running: true, left: DRILL_SECONDS, startScore: session.score });
+  display.textContent = '2:00';
+  showToast('2-minute daily drill started! Go!');
+
+  drill.interval = setInterval(() => {
+    drill.left -= 1;
+    display.textContent = `${Math.floor(drill.left / 60)}:${String(drill.left % 60).padStart(2, '0')}`;
+    if (drill.left <= 0) {
+      clearInterval(drill.interval);
+      drill.running = false;
+      display.textContent = 'Done!';
+      const done = session.score - drill.startScore;
+      showToast(`Time's up! You completed ${done} card${done === 1 ? '' : 's'}!`);
+    }
+  }, 1000);
+}
+
+// ==========================================
+// MIDI status pill + MIDI → piano sound bridge
+// ==========================================
+function renderMidiStatus(s) {
+  const dot = $('midiStatusDot');
+  const label = $('midiStatusLabel');
+  const btn = $('midiConnectBtn');
+  if (!s.supported) {
+    dot.className = 'w-2 h-2 rounded-full bg-[#8c6d56] shrink-0';
+    label.textContent = 'MIDI Unavailable';
+    btn.classList.add('opacity-60');
+  } else if (s.connected) {
+    dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0';
+    label.textContent = s.deviceName || 'MIDI Connected';
+    btn.classList.remove('border-[#5e4332]', 'text-[#f5ecd8]', 'bg-[#3d2a1f]');
+    btn.classList.add('border-emerald-400/50', 'text-emerald-200', 'bg-emerald-950/80');
+  } else {
+    dot.className = 'w-2 h-2 rounded-full bg-amber-300/80 shrink-0';
+    label.textContent = s.hasAccess ? 'No MIDI Device' : 'Connect MIDI';
+    btn.classList.remove('border-emerald-400/50', 'text-emerald-200', 'bg-emerald-950/80');
+    btn.classList.add('border-[#5e4332]', 'text-[#f5ecd8]', 'bg-[#3d2a1f]');
+  }
+}
+
+async function connectMidiFromButton() {
+  const { reason } = await midi.connect();
+  const msg = {
+    unsupported: 'Web MIDI is not supported on this browser (works in Chrome/Edge on Desktop & Android).',
+    denied: 'MIDI access denied. Check browser permissions for MIDI devices.',
+    'no-device': 'No MIDI keyboard detected yet—plug in your Yamaha P-125 via USB and it will auto-connect!',
+  }[reason];
+  if (msg) showToast(msg);
+}
+
+function initMidiShell() {
+  midi.on('status', (s) => {
+    renderMidiStatus(s);
+    if (s.event === 'connected') showToast(`🎹 Connected: ${s.deviceName}! Play the notes on your piano.`);
+    else if (s.event === 'disconnected') showToast('MIDI keyboard disconnected.');
+  });
+  // The shell owns piano sound for live MIDI so every game gets it (respects mute).
+  midi.on('noteon', ({ note, velocity }) => audio.playTone(midiToFreq(note), { duration: 4, velocity, hold: true }));
+  midi.on('noteoff', ({ note }) => audio.noteOff(note));
+  midi.on('sustain', ({ down }) => audio.setSustain(down));
+
+  $('midiConnectBtn').addEventListener('click', connectMidiFromButton);
+  midi.autoConnect();   // only if permission was already granted → no prompt on load
+}
+
+// ==========================================
+// Game lifecycle + router
+// ==========================================
+let active = null;        // { id, instance, scope, headerNodes }
+let previousId = null;
+let loadToken = 0;
+
+function teardown() {
+  if (!active) return;
+  const a = active;
+  active = null;
+  try { if (a.instance.unmount) a.instance.unmount(); } catch (err) { console.error('[unmount]', err); }
+  a.scope.dispose();
+  audio.stopAll();
+  a.headerNodes.forEach((n) => n.remove());
+  $('gameRoot').replaceChildren();
+}
+
+function makeContext(def, scope, headerNodes) {
+  return {
+    id: def.id,
+    scope,
+    score,
+    storage: storage.namespace(def.id),
+    navigate: go,
+    goBack() { if (active && active.id !== DEFAULT_GAME_ID) go(previousId && previousId !== active.id ? previousId : DEFAULT_GAME_ID); },
+    addHeaderButton({ icon = '', label = '', title = '', onClick } = {}) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = PILL;
+      btn.title = title;
+      btn.innerHTML = `${icon}${label ? `<span class="hidden sm:inline">${label}</span>` : ''}`;
+      if (onClick) scope.listen(btn, 'click', onClick);
+      $('headerActions').appendChild(btn);
+      headerNodes.push(btn);
+      return btn;
+    },
+  };
+}
+
+async function show(id) {
+  if (active && active.id === id) return;
+  const def = getGame(id);
+  if (!def) return;
+
+  const outgoing = active && active.id;
+  teardown();
+  if (outgoing) previousId = outgoing;
+  const token = ++loadToken;
+  markNav(id);
+
+  let mod;
+  try {
+    mod = await def.load();
+  } catch (err) {
+    console.error('[load]', err);
+    showToast('Could not load that game. Check your connection and try again.');
+    return;
+  }
+  if (token !== loadToken) return;   // user already navigated elsewhere while loading
+
+  const scope = createScope();
+  const headerNodes = [];
+  try {
+    const instance = mod.default(makeContext(def, scope, headerNodes));
+    active = { id, instance, scope, headerNodes };
+    instance.mount($('gameRoot'));
+    storage.set('lastGame', id);
+    document.title = `${def.title} · NoteReader`;
+    window.scrollTo(0, 0);
+  } catch (err) {
+    console.error('[mount]', err);
+    teardown();
+    scope.dispose();
+    showToast('Something went wrong starting that game.');
+  }
+}
+
+function go(id) {
+  if (location.hash === `#/${id}`) show(id);
+  else location.hash = `#/${id}`;   // hashchange → route()
+}
+
+function route() {
+  const fromHash = location.hash.replace(/^#\/?/, '');
+  const saved = storage.get('lastGame');
+  const id = [fromHash, saved].find(getGame) || DEFAULT_GAME_ID;
+  if (fromHash !== id) history.replaceState(null, '', `#/${id}`);
+  show(id);
+}
+
+// ==========================================
+// Game switcher (header nav)
+// ==========================================
+function renderNav() {
+  const nav = $('gameNav');
+  nav.replaceChildren();
+  GAMES.forEach((g) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'game-tab';
+    b.dataset.game = g.id;
+    b.title = g.title;
+    b.innerHTML = `<span aria-hidden="true">${g.icon}</span><span></span>`;
+    b.lastChild.textContent = g.shortTitle || g.title;
+    b.addEventListener('click', () => go(g.id));
+    nav.appendChild(b);
+  });
+}
+
+function markNav(id) {
+  $('gameNav').querySelectorAll('.game-tab').forEach((b) => {
+    if (b.dataset.game === id) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
+}
+
+// ==========================================
+// Global input delegation
+// ==========================================
+function initGlobalInput() {
+  // One keydown listener for the whole app; only the active game ever sees events.
+  window.addEventListener('keydown', (e) => {
+    if (!active || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target;
+    const inField = ['SELECT', 'INPUT', 'TEXTAREA'].includes(t.tagName) || t.isContentEditable;
+    if ((inField || e.repeat) && e.key !== 'Escape') return;
+    if (active.instance.onKeyDown) active.instance.onKeyDown(e);
+  });
+
+  // Don't leave focus on mouse/touch-clicked buttons so Space/Enter shortcuts keep working.
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('button');
+    if (b && e.detail > 0) b.blur();
+  });
+}
+
+// ==========================================
+// Boot
+// ==========================================
+function boot() {
+  audio.initAudio();
+  audio.onStatus((text) => { const el = $('pianoStatus'); if (el) el.textContent = text; });
+
+  renderNav();
+  renderScore();
+  $('drillTimerBtn').addEventListener('click', toggleDrillTimer);
+  initMidiShell();
+  initGlobalInput();
+
+  window.addEventListener('hashchange', route);
+  route();
+}
+
+boot();

@@ -1,286 +1,200 @@
 /**
- * NoteReader — SVG Musical Staff Renderer
- * Handles rendering treble, bass, and grand staves, ledger lines,
- * Hoffman-style 3D magnetic counters, and standard sheet music notes with stems.
+ * Reusable SVG staff renderers.
+ *
+ *  createCounterStaff(svgEl)  – big interactive staff with glossy counters
+ *                               (blue → green when solved, gold while playing, red on a miss).
+ *                               Supports treble, bass and grand staff.
+ *  renderNotationCard(notes)  – compact standard-notation card (noteheads + stems)
+ *                               returned as an SVG string, for ear-training cards.
  */
+import { CLEF_FONT, ledgerSteps, staffStep } from '../core/notes.js';
 
-import { CLEF_FONT, noteDiatonic } from '../core/notes.js';
+const NS = 'http://www.w3.org/2000/svg';
+
+function svgEl(name, attrs = {}, parent = null) {
+  const el = document.createElementNS(NS, name);
+  Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, String(v)));
+  if (parent) parent.appendChild(el);
+  return el;
+}
+
+let instanceCount = 0;
 
 /**
- * Renders the Hoffman Academy style interactive SVG staff for flashcard challenges.
+ * @param {SVGSVGElement} svg
+ * @returns {{ render, setState, refresh, clear }}
+ *
+ * render({ clef, notes, mobile, isDone(idx), hint, onNoteClick(idx, note) })
+ *   clef: 'treble' | 'bass' | 'grand'
+ *   hint: when set, only the empty staff + this message is drawn (piano-only mode)
  */
-export function renderStaff(svg, {
-    clef = 'treble',
-    sequence = [],
-    displayMode = 'both',
-    isRevealed = false,
-    completedCount = 0,
-    onDotClick = null
-} = {}) {
-    if (!svg) return;
+export function createCounterStaff(svg) {
+  const uid = `cs${++instanceCount}`;
+  const COUNTER = {
+    blue:  { fill: `url(#${uid}-blue)`,  stroke: '#93c5fd', r: 16.5 },
+    green: { fill: `url(#${uid}-green)`, stroke: '#a7f3d0', r: 16.5 },
+    gold:  { fill: `url(#${uid}-gold)`,  stroke: null,      r: 19.5 },
+    red:   { fill: '#ef4444',            stroke: '#fecaca', r: 16.5 },
+  };
+  let circles = [];
+  let isDone = () => false;
+
+  function applyState(idx, state) {
+    const circle = circles[idx];
+    const s = COUNTER[state];
+    if (!circle || !s) return;
+    circle.setAttribute('fill', s.fill);
+    if (s.stroke) circle.setAttribute('stroke', s.stroke);
+    circle.setAttribute('r', s.r);
+  }
+
+  function drawFiveLines(bottomY, W, spacing) {
+    for (let i = 0; i < 5; i++) {
+      const y = bottomY - i * spacing;
+      svgEl('line', { x1: 35, x2: W - 30, y1: y, y2: y, stroke: '#334155', 'stroke-width': 2 }, svg);
+    }
+  }
+
+  function clefGlyph(glyph, x, y, size) {
+    const t = svgEl('text', { x, y, 'font-size': size, 'font-family': CLEF_FONT, fill: '#2563EB' }, svg);
+    t.textContent = glyph;
+  }
+
+  function render({ clef = 'treble', notes = [], mobile = false, isDone: done, hint = null, onNoteClick } = {}) {
     svg.innerHTML = '';
+    circles = [];
+    if (done) isDone = done;
 
-    const isMobile = window.innerWidth < 640;
-    const W = isMobile ? 520 : 820;
+    const W = mobile ? 520 : 820;
     const isGrand = clef === 'grand';
-
-    svg.setAttribute('viewBox', `0 0 ${W} ${isGrand ? 330 : 220}`);
-    svg.setAttribute('class', isGrand
-        ? 'w-full h-auto max-h-60 sm:max-h-64 overflow-visible'
-        : 'w-full h-auto max-h-40 sm:max-h-52 overflow-visible'
-    );
-
-    const lineSpacing = 21;
+    const spacing = 21;
     const trebleBottomY = isGrand ? 125 : 155;
     const bassBottomY = 275;
 
-    function drawFiveLines(bottomY) {
-        for (let i = 0; i < 5; i++) {
-            const y = bottomY - i * lineSpacing;
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', '35');
-            line.setAttribute('x2', String(W - 30));
-            line.setAttribute('y1', y);
-            line.setAttribute('y2', y);
-            line.setAttribute('stroke', '#334155');
-            line.setAttribute('stroke-width', '2');
-            svg.appendChild(line);
-        }
-    }
+    svg.setAttribute('viewBox', `0 0 ${W} ${isGrand ? 330 : 220}`);
+    svg.setAttribute('class', isGrand
+      ? 'w-full h-auto max-h-60 sm:max-h-64 overflow-visible'
+      : 'w-full h-auto max-h-40 sm:max-h-52 overflow-visible');
 
+    // --- staff lines, system bar, clef(s) ---
     if (isGrand) {
-        drawFiveLines(trebleBottomY);
-        drawFiveLines(bassBottomY);
-
-        const leftBar = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        leftBar.setAttribute('x1', '35');
-        leftBar.setAttribute('x2', '35');
-        leftBar.setAttribute('y1', trebleBottomY - 4 * lineSpacing);
-        leftBar.setAttribute('y2', bassBottomY);
-        leftBar.setAttribute('stroke', '#334155');
-        leftBar.setAttribute('stroke-width', '3');
-        svg.appendChild(leftBar);
-
-        const trebleClef = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        trebleClef.setAttribute('x', '46');
-        trebleClef.setAttribute('y', trebleBottomY + 8);
-        trebleClef.setAttribute('font-size', '145');
-        trebleClef.setAttribute('font-family', CLEF_FONT);
-        trebleClef.setAttribute('fill', '#2563EB');
-        trebleClef.textContent = '𝄞';
-        svg.appendChild(trebleClef);
-
-        const bassClef = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        bassClef.setAttribute('x', '50');
-        bassClef.setAttribute('y', bassBottomY - 12);
-        bassClef.setAttribute('font-size', '110');
-        bassClef.setAttribute('font-family', CLEF_FONT);
-        bassClef.setAttribute('fill', '#2563EB');
-        bassClef.textContent = '𝄢';
-        svg.appendChild(bassClef);
+      drawFiveLines(trebleBottomY, W, spacing);
+      drawFiveLines(bassBottomY, W, spacing);
+      svgEl('line', { x1: 35, x2: 35, y1: trebleBottomY - 4 * spacing, y2: bassBottomY, stroke: '#334155', 'stroke-width': 3 }, svg);
+      clefGlyph('𝄞', 46, trebleBottomY + 8, 145);
+      clefGlyph('𝄢', 50, bassBottomY - 12, 110);
     } else {
-        drawFiveLines(trebleBottomY);
-
-        const leftBar = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        leftBar.setAttribute('x1', '35');
-        leftBar.setAttribute('x2', '35');
-        leftBar.setAttribute('y1', trebleBottomY - 4 * lineSpacing);
-        leftBar.setAttribute('y2', trebleBottomY);
-        leftBar.setAttribute('stroke', '#334155');
-        leftBar.setAttribute('stroke-width', '2.5');
-        svg.appendChild(leftBar);
-
-        if (clef === 'treble') {
-            const clefText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            clefText.setAttribute('x', '48');
-            clefText.setAttribute('y', trebleBottomY + 8);
-            clefText.setAttribute('font-size', '148');
-            clefText.setAttribute('font-family', CLEF_FONT);
-            clefText.setAttribute('fill', '#2563EB');
-            clefText.textContent = '𝄞';
-            svg.appendChild(clefText);
-        } else {
-            const clefText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            clefText.setAttribute('x', '52');
-            clefText.setAttribute('y', trebleBottomY - 14);
-            clefText.setAttribute('font-size', '114');
-            clefText.setAttribute('font-family', CLEF_FONT);
-            clefText.setAttribute('fill', '#2563EB');
-            clefText.textContent = '𝄢';
-            svg.appendChild(clefText);
-        }
+      drawFiveLines(trebleBottomY, W, spacing);
+      svgEl('line', { x1: 35, x2: 35, y1: trebleBottomY - 4 * spacing, y2: trebleBottomY, stroke: '#334155', 'stroke-width': 2.5 }, svg);
+      if (clef === 'treble') clefGlyph('𝄞', 48, trebleBottomY + 8, 148);
+      else clefGlyph('𝄢', 52, trebleBottomY - 14, 114);
     }
 
-    if (displayMode === 'piano' && !isRevealed) {
-        const hint = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        hint.setAttribute('x', String(W / 2));
-        hint.setAttribute('y', isGrand ? '170' : '118');
-        hint.setAttribute('text-anchor', 'middle');
-        hint.setAttribute('fill', '#64748b');
-        hint.setAttribute('font-size', '19');
-        hint.setAttribute('font-weight', '600');
-        hint.textContent = 'Look at the blue dots on the piano keys above!';
-        svg.appendChild(hint);
-        return;
+    if (hint) {
+      const t = svgEl('text', {
+        x: W / 2, y: isGrand ? 170 : 118, 'text-anchor': 'middle',
+        fill: '#64748b', 'font-size': 19, 'font-weight': 600,
+      }, svg);
+      t.textContent = hint;
+      return;
     }
 
-    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-    defs.innerHTML = `
-        <radialGradient id="blueCounterGrad" cx="32%" cy="28%" r="65%">
-            <stop offset="0%" stop-color="#5da2ff"/>
-            <stop offset="56%" stop-color="#1d63dc"/>
-            <stop offset="100%" stop-color="#13449e"/>
-        </radialGradient>
-        <radialGradient id="greenCounterGrad" cx="35%" cy="30%" r="65%">
-            <stop offset="0%" stop-color="#34D399"/>
-            <stop offset="60%" stop-color="#10B981"/>
-            <stop offset="100%" stop-color="#059669"/>
-        </radialGradient>
-        <radialGradient id="goldCounterGrad" cx="35%" cy="30%" r="65%">
-            <stop offset="0%" stop-color="#fef08a"/>
-            <stop offset="60%" stop-color="#f59e0b"/>
-            <stop offset="100%" stop-color="#b45309"/>
-        </radialGradient>
-        <filter id="dotShadow" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#1c1108" flood-opacity="0.4"/>
-        </filter>
-    `;
-    svg.appendChild(defs);
+    // --- gradients / shadow ---
+    svgEl('defs', {}, svg).innerHTML = `
+      <radialGradient id="${uid}-blue" cx="32%" cy="28%" r="65%">
+        <stop offset="0%" stop-color="#5da2ff"/><stop offset="56%" stop-color="#1d63dc"/><stop offset="100%" stop-color="#13449e"/>
+      </radialGradient>
+      <radialGradient id="${uid}-green" cx="35%" cy="30%" r="65%">
+        <stop offset="0%" stop-color="#34D399"/><stop offset="60%" stop-color="#10B981"/><stop offset="100%" stop-color="#059669"/>
+      </radialGradient>
+      <radialGradient id="${uid}-gold" cx="35%" cy="30%" r="65%">
+        <stop offset="0%" stop-color="#fef08a"/><stop offset="60%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#b45309"/>
+      </radialGradient>
+      <filter id="${uid}-shadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#1c1108" flood-opacity="0.4"/>
+      </filter>`;
 
-    const count = sequence.length;
-    const noteSpan = isMobile ? 290 : 480;
-    const maxGap = isMobile ? 80 : 115;
-    const startX = count === 1 ? (isMobile ? 330 : 390) : (isMobile ? 185 : 215);
+    // --- counters ---
+    const count = notes.length;
+    const noteSpan = mobile ? 290 : 480;
+    const maxGap = mobile ? 80 : 115;
+    const startX = count === 1 ? (mobile ? 330 : 390) : (mobile ? 185 : 215);
     const spacingX = count === 1 ? 0 : Math.min(maxGap, noteSpan / (count - 1));
 
-    sequence.forEach((note, idx) => {
-        const cx = startX + idx * spacingX;
+    notes.forEach((note, idx) => {
+      const cx = startX + idx * spacingX;
+      const useBass = clef === 'bass' || (isGrand && note.octave < 4);
+      const bottomY = (useBass && isGrand) ? bassBottomY : trebleBottomY;
+      const step = staffStep(note, useBass ? 'bass' : 'treble');
+      const cy = bottomY - step * (spacing / 2);
 
-        const useBass = clef === 'bass' || (isGrand && note.octave < 4);
-        const activeBottomY = (useBass && isGrand) ? bassBottomY : trebleBottomY;
-        const step = noteDiatonic(note) - (useBass ? 18 : 30);
-        const cy = activeBottomY - step * (lineSpacing / 2);
+      ledgerSteps(step).forEach((ls) => {
+        const ly = bottomY - ls * (spacing / 2);
+        svgEl('line', { x1: cx - 28, x2: cx + 28, y1: ly, y2: ly, stroke: '#1e293b', 'stroke-width': 2.5 }, svg);
+      });
 
-        const ledgerSteps = [];
-        if (step < 0) for (let ls = -2; ls >= step; ls -= 2) ledgerSteps.push(ls);
-        if (step > 8) for (let ls = 10; ls <= step; ls += 2) ledgerSteps.push(ls);
-        ledgerSteps.forEach(ls => {
-            const ly = activeBottomY - ls * (lineSpacing / 2);
-            const ledger = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            ledger.setAttribute('x1', cx - 28);
-            ledger.setAttribute('x2', cx + 28);
-            ledger.setAttribute('y1', ly);
-            ledger.setAttribute('y2', ly);
-            ledger.setAttribute('stroke', '#1e293b');
-            ledger.setAttribute('stroke-width', '2.5');
-            svg.appendChild(ledger);
-        });
+      const g = svgEl('g', { class: 'staff-dot-group', 'data-seq-idx': idx }, svg);
+      g.style.cursor = 'pointer';
+      if (onNoteClick) g.addEventListener('click', () => onNoteClick(idx, note));
 
-        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        g.setAttribute('class', 'staff-dot-group transition-transform duration-200');
-        g.dataset.seqIdx = idx;
-        g.style.cursor = 'pointer';
+      const done = isDone(idx);
+      const circle = svgEl('circle', {
+        cx, cy, r: 16.5, 'stroke-width': 2, filter: `url(#${uid}-shadow)`,
+        fill: COUNTER[done ? 'green' : 'blue'].fill,
+        stroke: COUNTER[done ? 'green' : 'blue'].stroke,
+      }, g);
+      circles[idx] = circle;
+      svgEl('ellipse', { cx: cx - 4, cy: cy - 6, rx: 7, ry: 3.5, fill: 'rgba(255,255,255,0.35)' }, g);
 
-        if (onDotClick) {
-            g.addEventListener('click', () => onDotClick(note, idx));
-        }
-
-        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        const isStepCompleted = isRevealed || idx < completedCount;
-        circle.setAttribute('cx', cx);
-        circle.setAttribute('cy', cy);
-        circle.setAttribute('r', '16.5');
-        circle.setAttribute('fill', isStepCompleted ? 'url(#greenCounterGrad)' : 'url(#blueCounterGrad)');
-        circle.setAttribute('stroke', isStepCompleted ? '#a7f3d0' : '#93c5fd');
-        circle.setAttribute('stroke-width', '2');
-        circle.setAttribute('filter', 'url(#dotShadow)');
-        g.appendChild(circle);
-
-        const gloss = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
-        gloss.setAttribute('cx', cx - 4);
-        gloss.setAttribute('cy', cy - 6);
-        gloss.setAttribute('rx', '7');
-        gloss.setAttribute('ry', '3.5');
-        gloss.setAttribute('fill', 'rgba(255,255,255,0.35)');
-        g.appendChild(gloss);
-
-        if (isStepCompleted) {
-            const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            label.setAttribute('x', cx);
-            label.setAttribute('y', cy + 6);
-            label.setAttribute('text-anchor', 'middle');
-            label.setAttribute('fill', '#ffffff');
-            label.setAttribute('font-family', 'Fredoka, sans-serif');
-            label.setAttribute('font-size', '18');
-            label.setAttribute('font-weight', '700');
-            label.textContent = note.letter;
-            g.appendChild(label);
-        }
-
-        svg.appendChild(g);
+      if (done) {
+        const label = svgEl('text', {
+          x: cx, y: cy + 6, 'text-anchor': 'middle', fill: '#ffffff',
+          'font-family': 'Fredoka, sans-serif', 'font-size': 18, 'font-weight': 700,
+        }, g);
+        label.textContent = note.letter;
+      }
     });
-}
+  }
 
-export function flashWrongStaffDot(svg, idx, isCompleted = false) {
-    if (!svg) return;
-    const group = svg.querySelector(`.staff-dot-group[data-seq-idx="${idx}"]`);
-    if (!group) return;
-    const circle = group.querySelector('circle');
-    if (!circle) return;
-
-    circle.setAttribute('fill', '#ef4444');
-    circle.setAttribute('stroke', '#fecaca');
-
-    setTimeout(() => {
-        circle.setAttribute('fill', isCompleted ? 'url(#greenCounterGrad)' : 'url(#blueCounterGrad)');
-        circle.setAttribute('stroke', isCompleted ? '#a7f3d0' : '#93c5fd');
-    }, 340);
-}
-
-export function highlightStaffDot(svg, idx, isActive, isCompleted = false) {
-    if (!svg) return;
-    const group = svg.querySelector(`.staff-dot-group[data-seq-idx="${idx}"]`);
-    if (!group) return;
-    const circle = group.querySelector('circle');
-    if (!circle) return;
-
-    if (isActive) {
-        circle.setAttribute('fill', 'url(#goldCounterGrad)');
-        circle.setAttribute('r', '19.5');
-    } else {
-        circle.setAttribute('fill', isCompleted ? 'url(#greenCounterGrad)' : 'url(#blueCounterGrad)');
-        circle.setAttribute('r', '16.5');
-    }
+  return {
+    render,
+    /** state: 'blue' | 'green' | 'gold' | 'red' */
+    setState: applyState,
+    /** Restore a counter to blue/green based on isDone(). */
+    refresh: (idx) => applyState(idx, isDone(idx) ? 'green' : 'blue'),
+    clear() { svg.innerHTML = ''; circles = []; },
+  };
 }
 
 /**
- * Generates an SVG string of sheet music with traditional notes and stems (for Listen & Match)
+ * Compact standard-notation card (clef + staff + noteheads with stems) as an SVG string.
+ * @param {Array} notes  items from ALL_NOTES
+ * @param {{clef?: 'treble'|'bass'}} opts
  */
-export function generateSheetMusicSvg(sequence) {
-    const bottom = 60;
-    let h = '<svg viewBox="0 0 200 100" class="w-full h-auto block" aria-hidden="true">';
-    for (let i = 0; i < 5; i++) {
-        const y = bottom - i * 8;
-        h += `<line x1="6" x2="194" y1="${y}" y2="${y}" stroke="#334155" stroke-width="1"/>`;
-    }
-    h += `<text x="18" y="${bottom + 3}" font-size="56" font-family="${CLEF_FONT}" fill="#0f172a">𝄞</text>`;
-    const n = sequence.length;
-    sequence.forEach((note, i) => {
-        const step = noteDiatonic(note) - 30; // bottom line = E4
-        const cx = n === 1 ? 120 : 64 + i * (124 / (n - 1));
-        const cy = bottom - step * 4;
-        const ledgers = [];
-        if (step < 0) for (let k = -2; k >= step; k -= 2) ledgers.push(k);
-        if (step > 8) for (let k = 10; k <= step; k += 2) ledgers.push(k);
-        ledgers.forEach(k => {
-            const y = bottom - k * 4;
-            h += `<line x1="${cx - 9}" x2="${cx + 9}" y1="${y}" y2="${y}" stroke="#334155" stroke-width="1.2"/>`;
-        });
-        const down = step >= 4;
-        const sx = down ? cx - 5 : cx + 5;
-        h += `<line x1="${sx}" x2="${sx}" y1="${cy}" y2="${down ? cy + 24 : cy - 24}" stroke="#0f172a" stroke-width="1.4"/>`;
-        h += `<ellipse cx="${cx}" cy="${cy}" rx="5.6" ry="4" transform="rotate(-20 ${cx} ${cy})" fill="#0f172a"/>`;
+export function renderNotationCard(notes, { clef = 'treble' } = {}) {
+  const bottom = 60;
+  let h = '<svg viewBox="0 0 200 100" class="w-full h-auto block" aria-hidden="true">';
+  for (let i = 0; i < 5; i++) {
+    const y = bottom - i * 8;
+    h += `<line x1="6" x2="194" y1="${y}" y2="${y}" stroke="#334155" stroke-width="1"/>`;
+  }
+  h += clef === 'bass'
+    ? `<text x="20" y="${bottom - 5}" font-size="43" font-family="${CLEF_FONT}" fill="#0f172a">𝄢</text>`
+    : `<text x="18" y="${bottom + 3}" font-size="56" font-family="${CLEF_FONT}" fill="#0f172a">𝄞</text>`;
+
+  const n = notes.length;
+  notes.forEach((note, i) => {
+    const step = staffStep(note, clef);
+    const cx = n === 1 ? 120 : 64 + i * (124 / (n - 1));
+    const cy = bottom - step * 4;
+    ledgerSteps(step).forEach((k) => {
+      const y = bottom - k * 4;
+      h += `<line x1="${cx - 9}" x2="${cx + 9}" y1="${y}" y2="${y}" stroke="#334155" stroke-width="1.2"/>`;
     });
-    h += '</svg>';
-    return h;
+    const down = step >= 4;
+    const sx = down ? cx - 5 : cx + 5;
+    h += `<line x1="${sx}" x2="${sx}" y1="${cy}" y2="${down ? cy + 24 : cy - 24}" stroke="#0f172a" stroke-width="1.4"/>`;
+    h += `<ellipse cx="${cx}" cy="${cy}" rx="5.6" ry="4" transform="rotate(-20 ${cx} ${cy})" fill="#0f172a"/>`;
+  });
+  return h + '</svg>';
 }
