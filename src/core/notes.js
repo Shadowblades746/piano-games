@@ -60,6 +60,12 @@ export function getNoteByMidi(midi) {
     return ALL_NOTES.find(n => n.midi === midi) || null;
 }
 
+export function getClosestNoteForLetter(letter, anchorMidi = 60) {
+    const candidates = ALL_NOTES.filter(n => n.letter === letter);
+    if (!candidates.length) return null;
+    return candidates.sort((a, b) => Math.abs(a.midi - anchorMidi) - Math.abs(b.midi - anchorMidi))[0];
+}
+
 export function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, c => ({
         '&': '&amp;',

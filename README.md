@@ -12,8 +12,27 @@ A production-grade, zero-build piano sight-reading and ear-training suite inspir
 - **Web MIDI API Support**: Seamless plug-and-play with digital pianos (e.g., Yamaha P-125) via USB or Bluetooth MIDI, with Play-to-Answer and Free Play modes.
 - **Web Speech API ("Say It Out Loud")**: Automatic speech recognition for note names `A`–`G` with phonetic mapping.
 - **Plugin-Style Game Registry**: Adding a new mini-game only requires creating one file and registering it in a single array.
-- **Zero-Build Static Architecture**: Deployable directly to Vercel or GitHub Pages without build steps or bundlers.
+- **Dual-Mode Loading**: Works both when double-clicked directly from your computer (`file:///`) and when served over HTTP/HTTPS (Vercel, GitHub Pages, localhost).
 - **Mobile First**: Native `100dvh` viewport support, notch/safe-area insets, 16px form inputs to prevent iOS auto-zoom, and multi-gesture audio unlocking.
+
+---
+
+## 🚀 How to Run Locally
+
+### Method 1: Just Double-Click (Zero Setup!)
+Double-click `index.html` directly in Windows File Explorer or Finder. The dual-mode loader automatically loads `dist/app.bundle.js` so it works without being blocked by browser `file:///` CORS restrictions!
+
+### Method 2: Local Web Server (Live Source ES Modules)
+If you want to edit files in `src/` directly with live browser reloading:
+```bash
+# Using Node / npm
+npm start
+# or npx
+npx serve .
+# or Python
+python -m http.server 3000
+```
+Open `http://localhost:3000` in Chrome or Edge.
 
 ---
 
@@ -23,9 +42,14 @@ A production-grade, zero-build piano sight-reading and ear-training suite inspir
 piano-games/
 ├── index.html                 # Semantic HTML shell, shared navigation & game mount container
 ├── vercel.json                # Vercel static routing & caching header configuration
+├── package.json               # Development scripts (build, start)
 ├── README.md                  # Project documentation & plugin guide
 ├── css/
 │   └── styles.css             # Compiled Tailwind CSS + custom tactile Hoffman piano theme
+├── dist/
+│   └── app.bundle.js          # Self-contained bundle for seamless file:/// offline execution
+├── scripts/
+│   └── build.js               # Zero-dependency bundler (npm run build)
 └── src/
     ├── main.js                # App bootstrapper, router, shared top bar & shortcut delegation
     ├── core/
@@ -130,7 +154,11 @@ export const GAMES = [
 ];
 ```
 
-That's it! NoteReader's navigation shell and URL router (`#game=my-game`) will automatically generate the tab button and manage mounting, unmounting, and keyboard delegation.
+### Step 3: (Optional) Rebuild the offline bundle
+If you want the new game to also run when double-clicked on `file:///`:
+```bash
+npm run build
+```
 
 ---
 
@@ -139,14 +167,11 @@ That's it! NoteReader's navigation shell and URL router (`#game=my-game`) will a
 Because NoteReader is built with zero-build static ES Modules, deployment takes less than a minute:
 
 ### Option A: Via GitHub (Recommended)
-1. Push this folder to a GitHub repository:
+1. Commit and push your changes:
    ```bash
-   git init
    git add .
-   git commit -m "Refactor NoteReader into modular multi-file architecture"
-   git branch -M main
-   git remote add origin https://github.com/<your-username>/<your-repo-name>.git
-   git push -u origin main
+   git commit -m "Add dual-mode loader and fix note helper export"
+   git push
    ```
 2. Log into [Vercel](https://vercel.com) and click **"Add New Project"**.
 3. Import your GitHub repository.

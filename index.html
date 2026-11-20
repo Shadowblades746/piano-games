@@ -23,7 +23,7 @@
                 <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-[#3b82f6] to-[#1d4ed8] text-white flex items-center justify-center font-display font-bold text-sm shadow-sm border border-[#93c5fd]/50 shrink-0">
                     ♪
                 </div>
-                <span class="hidden min-[480px]:inline font-display font-bold text-sm sm:text-base tracking-tight text-[#fdf6e7] truncate">
+                <span class="hidden min-[420px]:inline font-display font-bold text-sm sm:text-base tracking-tight text-[#fdf6e7] truncate">
                     Note<span class="text-[#7dd3fc]">Reader</span>
                 </span>
             </div>
@@ -75,7 +75,22 @@
     <div id="toastBox" role="status" aria-live="polite" class="fixed left-1/2 -translate-x-1/2 z-50 pointer-events-none opacity-0 transition-opacity duration-300 bg-[#2c1e16]/95 text-[#fdf6e7] border border-[#5e4332] px-4 py-2 rounded-full shadow-lg text-xs font-medium text-center max-w-xs sm:max-w-sm">
     </div>
 
-    <!-- Application Entrypoint -->
-    <script type="module" src="src/main.js"></script>
+    <!-- Application Entrypoint:
+         - When opened via file:/// (e.g. double-clicked from disk), loads dist/app.bundle.js
+           because browsers block raw ES module imports on file:// origins due to CORS.
+         - When served over http:// or https:// (Vercel, GitHub Pages, localhost), loads src/main.js natively.
+    -->
+    <script>
+        if (window.location.protocol === 'file:') {
+            const s = document.createElement('script');
+            s.src = 'dist/app.bundle.js';
+            document.body.appendChild(s);
+        }
+    </script>
+    <script type="module">
+        if (window.location.protocol !== 'file:') {
+            import('./src/main.js');
+        }
+    </script>
 </body>
 </html>
