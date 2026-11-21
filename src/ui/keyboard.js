@@ -7,7 +7,7 @@
  *     onKeyPress(note, event) {}, onBlackKeyPress({ midi, freq }, event) {},
  *   });
  *   kb.render();                         // (re)build; call again on resize / range change
- *   kb.setCounters([{ seqIdx, noteId, text, done }]);   // glossy counter badges on keys
+ *   kb.setCounters([{ seqIdx, noteId | midi, text, done }]);   // counter badges on white or black keys
  *   kb.pressNote('C4', true);  kb.pressMidi(61, true);  // highlight from MIDI / playback
  *   kb.flagCounter(idx, 'active-play' | 'wrong-flash', on);  kb.markWrong('C4', true);
  *   kb.destroy();
@@ -73,6 +73,9 @@ export function createKeyboard(container, options = {}) {
         black.style.left = `${(index + 1) * widthPct - blackW / 2}%`;
         black.className = 'black-key absolute top-0 h-[56%] cursor-pointer';
         black.dataset.sharpMidi = note.midi + 1;
+        const bslot = document.createElement('div');
+        bslot.className = 'key-counter-slot black-slot absolute bottom-1 inset-x-0 flex justify-center pointer-events-none z-10';
+        black.appendChild(bslot);
         black.addEventListener('click', (e) => {
           e.stopPropagation();
           if (onBlackKeyPress) onBlackKeyPress({ midi: note.midi + 1, freq: note.freq * Math.pow(2, 1 / 12) }, e);
@@ -96,6 +99,7 @@ export function createKeyboard(container, options = {}) {
     if (black) black.classList.toggle('pressed', on);
   }
 
+  /** Counter badges. Items: { seqIdx, noteId | midi, text, done }. A `midi` on a black key lands on that black key. */
   function setCounters(list = []) {
     container.querySelectorAll('.key-counter-slot').forEach((s) => { s.innerHTML = ''; });
     const n = visible.length;
@@ -104,13 +108,18 @@ export function createKeyboard(container, options = {}) {
       : n <= 12
         ? 'w-5 h-5 sm:w-8 sm:h-8 text-[10px] sm:text-sm'
         : 'w-4 h-4 sm:w-7 sm:h-7 md:w-8 md:h-8 text-[9px] sm:text-xs';
+    const blackSize = 'w-4 h-4 sm:w-6 sm:h-6 text-[8px] sm:text-[10px]';
 
-    list.forEach(({ seqIdx, noteId, text = '', done = false }) => {
-      const slot = whiteKey(noteId)?.querySelector('.key-counter-slot');
+    list.forEach(({ seqIdx, noteId, midi, text = '', done = false }) => {
+      const natural = midi !== undefined ? noteForMidi(midi) : null;
+      const onBlack = midi !== undefined && !natural;
+      const slot = onBlack
+        ? container.querySelector(`.black-key[data-sharp-midi="${midi}"] .key-counter-slot`)
+        : whiteKey(noteId || natural.id)?.querySelector('.key-counter-slot');
       if (!slot) return;
       const dot = document.createElement('div');
       dot.dataset.seqIdx = seqIdx;
-      dot.className = `blue-counter piano-dot ${size} rounded-full flex items-center justify-center text-white font-display font-bold shadow-md ${done ? 'revealed-correct' : ''}`;
+      dot.className = `blue-counter piano-dot ${onBlack ? blackSize : size} rounded-full flex items-center justify-center text-white font-display font-bold shadow-md ${done ? 'revealed-correct' : ''}`;
       dot.textContent = text;
       slot.appendChild(dot);
     });

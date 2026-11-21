@@ -20,6 +20,7 @@
 export const GAMES = [
   { id: 'note-flashcards', title: 'Note Flashcards', shortTitle: 'Flashcards', icon: '🎴', load: () => import('./note-flashcards.js') },
   { id: 'listen-match',    title: 'Listen & Match',  shortTitle: 'Listen',     icon: '🎧', load: () => import('./listen-match.js') },
+  { id: 'letter-ladders',   title: 'Letter Ladders',  shortTitle: 'Ladders',    icon: '🪜', load: () => import('./letter-ladders.js') },
   // { id: 'interval-reading', title: 'Interval Reading', shortTitle: 'Intervals', icon: '↕️', load: () => import('./interval-reading.js') },
 ];
 

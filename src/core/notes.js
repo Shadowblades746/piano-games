@@ -95,3 +95,55 @@ export const LISTEN_LEVELS = [
   { name: '3 · One octave, 4 notes', from: 'C4', to: 'C5', len: 4, changes: [1, 2], flip: 0.2 },
   { name: '4 · Wide range, 5 notes', from: 'C4', to: 'G5', len: 5, changes: [1],    flip: 0.1 },
 ];
+
+// ---------- Major keys & scale notes (with accidentals) ----------
+export const accidentalSymbol = (a) => (a < 0 ? '♭' : a > 0 ? '♯' : '');
+
+const MAJOR_STEPS = [0, 2, 4, 5, 7, 9, 11];
+
+/** The 12 major keys, in circle-of-fifths order (sharps → flats). */
+export const MAJOR_KEYS = [
+  { id: 'C',  letter: 'C', accidental: 0 },
+  { id: 'G',  letter: 'G', accidental: 0 },
+  { id: 'D',  letter: 'D', accidental: 0 },
+  { id: 'A',  letter: 'A', accidental: 0 },
+  { id: 'E',  letter: 'E', accidental: 0 },
+  { id: 'B',  letter: 'B', accidental: 0 },
+  { id: 'F#', letter: 'F', accidental: 1 },
+  { id: 'Db', letter: 'D', accidental: -1 },
+  { id: 'Ab', letter: 'A', accidental: -1 },
+  { id: 'Eb', letter: 'E', accidental: -1 },
+  { id: 'Bb', letter: 'B', accidental: -1 },
+  { id: 'F',  letter: 'F', accidental: 0 },
+].map((k) => ({ ...k, name: k.letter + accidentalSymbol(k.accidental), label: `${k.letter}${accidentalSymbol(k.accidental)} major` }));
+
+export const getMajorKey = (id) => MAJOR_KEYS.find((k) => k.id === id) || MAJOR_KEYS[0];
+
+/**
+ * Every note of a major scale between two MIDI numbers, ascending.
+ * Each note: { id, letter, accidental (-1|0|1), name ('F♯'), octave (of the letter), midi, freq,
+ *              degree (0 = do … 6 = ti), clef }.  Works with staffStep()/ledgerSteps() as-is.
+ */
+export function scaleNotes(keyId, lowMidi = 60, highMidi = 79) {
+  const key = getMajorKey(keyId);
+  const out = [];
+  for (let octave = 2; octave <= 6; octave++) {
+    const tonicD = octave * 7 + LETTER_INDEX[key.letter];
+    const tonicMidi = (octave + 1) * 12 + NATURAL_PC[key.letter] + key.accidental;
+    for (let degree = 0; degree < 7; degree++) {
+      const d = tonicD + degree;
+      const letter = LETTERS[d % 7];
+      const noteOctave = Math.floor(d / 7);
+      const midi = tonicMidi + MAJOR_STEPS[degree];
+      const accidental = midi - ((noteOctave + 1) * 12 + NATURAL_PC[letter]);
+      if (midi < lowMidi || midi > highMidi) continue;
+      out.push({
+        id: `${letter}${accidental < 0 ? 'b' : accidental > 0 ? '#' : ''}${noteOctave}`,
+        letter, accidental, name: letter + accidentalSymbol(accidental),
+        octave: noteOctave, midi, freq: Math.round(midiToFreq(midi) * 100) / 100,
+        degree, clef: midi >= 60 ? 'treble' : 'bass',
+      });
+    }
+  }
+  return out.sort((a, b) => a.midi - b.midi);
+}

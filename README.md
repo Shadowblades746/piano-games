@@ -9,7 +9,7 @@ index.html              Shell: header (MIDI, 2-min timer, ★ score, 🔥 streak
 css/input.css           SOURCE styles (custom components + Tailwind directives)
 css/styles.css          BUILT stylesheet the page loads (committed → no build on Vercel)
 src/main.js             Bootstrap, hash router, header controls, MIDI→piano bridge, key delegation, game lifecycle
-src/core/notes.js       ALL_NOTES, staff-step/ledger math, freq⇄MIDI, level presets
+src/core/notes.js       ALL_NOTES, MAJOR_KEYS + scaleNotes() (with ♯/♭), staff-step/ledger math, freq⇄MIDI, level presets
 src/core/audio.js       Salamander sampler (CacheStorage), velocity, note-off, CC64 sustain, sequences, mute, synth fallback
 src/core/midi.js        Web MIDI manager + event emitter (noteon / noteoff / sustain / status)
 src/core/speech.js      A–G voice listener with start/stop/destroy
@@ -23,6 +23,7 @@ src/games/registry.js   THE list of games
 src/games/_template.js  Starter for a new game
 src/games/note-flashcards.js   Game 1
 src/games/listen-match.js      Game 2
+src/games/letter-ladders.js    Game 3 (steps/skips up & down, letters or movable-do solfège, any of 12 major keys)
 ```
 
 ## Run locally

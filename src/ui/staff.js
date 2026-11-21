@@ -20,11 +20,25 @@ function svgEl(name, attrs = {}, parent = null) {
 
 let instanceCount = 0;
 
+/** Draw a ♯ or ♭ as plain SVG shapes (no font needed), centred on (x, y). */
+function drawAccidental(parent, accidental, x, y, color = '#1e293b', scale = 1) {
+  const g = svgEl('g', { transform: `translate(${x} ${y}) scale(${scale})`, fill: 'none', stroke: color, 'stroke-linecap': 'round' }, parent);
+  if (accidental > 0) {
+    svgEl('line', { x1: -3.5, x2: -3.5, y1: -14, y2: 12, 'stroke-width': 1.8 }, g);
+    svgEl('line', { x1: 3.5, x2: 3.5, y1: -12, y2: 14, 'stroke-width': 1.8 }, g);
+    svgEl('line', { x1: -7.5, x2: 7.5, y1: -3, y2: -6.5, 'stroke-width': 3.6 }, g);
+    svgEl('line', { x1: -7.5, x2: 7.5, y1: 6.5, y2: 3, 'stroke-width': 3.6 }, g);
+  } else if (accidental < 0) {
+    svgEl('line', { x1: -3, x2: -3, y1: -17, y2: 8, 'stroke-width': 1.9 }, g);
+    svgEl('path', { d: 'M -3 8 C 8 3, 9 -8, -3 -3', 'stroke-width': 2.2 }, g);
+  }
+}
+
 /**
  * @param {SVGSVGElement} svg
  * @returns {{ render, setState, refresh, clear }}
  *
- * render({ clef, notes, mobile, isDone(idx), hint, onNoteClick(idx, note) })
+ * render({ clef, notes, mobile, isDone(idx), hint, onNoteClick(idx, note), labelFor(note, idx) })
  *   clef: 'treble' | 'bass' | 'grand'
  *   hint: when set, only the empty staff + this message is drawn (piano-only mode)
  */
@@ -60,7 +74,7 @@ export function createCounterStaff(svg) {
     t.textContent = glyph;
   }
 
-  function render({ clef = 'treble', notes = [], mobile = false, isDone: done, hint = null, onNoteClick } = {}) {
+  function render({ clef = 'treble', notes = [], mobile = false, isDone: done, hint = null, onNoteClick, labelFor = (n) => n.letter } = {}) {
     svg.innerHTML = '';
     circles = [];
     if (done) isDone = done;
@@ -134,6 +148,7 @@ export function createCounterStaff(svg) {
       });
 
       const g = svgEl('g', { class: 'staff-dot-group', 'data-seq-idx': idx }, svg);
+      if (note.accidental) drawAccidental(g, note.accidental, cx - 31, cy);
       g.style.cursor = 'pointer';
       if (onNoteClick) g.addEventListener('click', () => onNoteClick(idx, note));
 
@@ -147,11 +162,12 @@ export function createCounterStaff(svg) {
       svgEl('ellipse', { cx: cx - 4, cy: cy - 6, rx: 7, ry: 3.5, fill: 'rgba(255,255,255,0.35)' }, g);
 
       if (done) {
+        const text = String(labelFor(note, idx));
         const label = svgEl('text', {
-          x: cx, y: cy + 6, 'text-anchor': 'middle', fill: '#ffffff',
-          'font-family': 'Fredoka, sans-serif', 'font-size': 18, 'font-weight': 700,
+          x: cx, y: cy + (text.length > 2 ? 5 : 6), 'text-anchor': 'middle', fill: '#ffffff',
+          'font-family': 'Fredoka, sans-serif', 'font-size': text.length > 2 ? 13 : 18, 'font-weight': 700,
         }, g);
-        label.textContent = note.letter;
+        label.textContent = text;
       }
     });
   }
@@ -195,6 +211,12 @@ export function renderNotationCard(notes, { clef = 'treble' } = {}) {
     const sx = down ? cx - 5 : cx + 5;
     h += `<line x1="${sx}" x2="${sx}" y1="${cy}" y2="${down ? cy + 24 : cy - 24}" stroke="#0f172a" stroke-width="1.4"/>`;
     h += `<ellipse cx="${cx}" cy="${cy}" rx="5.6" ry="4" transform="rotate(-20 ${cx} ${cy})" fill="#0f172a"/>`;
+    if (note.accidental) {
+      const ax = cx - 12;
+      h += note.accidental > 0
+        ? `<g stroke="#0f172a" stroke-linecap="round" fill="none"><line x1="${ax-1.6}" x2="${ax-1.6}" y1="${cy-6}" y2="${cy+5}" stroke-width="0.9"/><line x1="${ax+1.6}" x2="${ax+1.6}" y1="${cy-5}" y2="${cy+6}" stroke-width="0.9"/><line x1="${ax-3.4}" x2="${ax+3.4}" y1="${cy-1.2}" y2="${cy-2.8}" stroke-width="1.7"/><line x1="${ax-3.4}" x2="${ax+3.4}" y1="${cy+2.8}" y2="${cy+1.2}" stroke-width="1.7"/></g>`
+        : `<g stroke="#0f172a" stroke-linecap="round" fill="none"><line x1="${ax-1.4}" x2="${ax-1.4}" y1="${cy-7.5}" y2="${cy+3.5}" stroke-width="1"/><path d="M ${ax-1.4} ${cy+3.5} C ${ax+3.5} ${cy+1.5}, ${ax+4} ${cy-3.5}, ${ax-1.4} ${cy-1.2}" stroke-width="1.1"/></g>`;
+    }
   });
   return h + '</svg>';
 }
